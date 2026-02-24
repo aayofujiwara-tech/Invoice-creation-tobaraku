@@ -110,12 +110,27 @@ class RxRow:
 
     @property
     def welfare_limit(self) -> int | None:
-        """備考欄から福祉上限額を読み取る。数値がなければNone。"""
+        """備考欄から福祉上限額を読み取る。数値がなければNone。
+
+        備考欄のパターン:
+          - "80,000" or "110000" → そのまま数値
+          - "9〇" or "11○" → 数字×10,000（○/〇 = 万の略記）
+          - "9〇+初期1万" → 9×10,000 = 90,000（+以降は無視）
+        """
         if not self.notes:
             return None
-        # 備考欄の数値を取得（例: "80,000" or "110000"）
         import re
-        cleaned = str(self.notes).replace(",", "").replace("，", "").strip()
+        notes_str = str(self.notes).strip()
+        # まず「数字+○/〇」パターンを検出（○ = 万の略記）
+        # 例: "9〇", "11○", "9〇+初期1万", "13"
+        # +以降は無視
+        base = notes_str.split("+")[0].strip()
+        circle_match = re.match(r"^(\d+)\s*[○〇]", base)
+        if circle_match:
+            return int(circle_match.group(1)) * 10000
+
+        # カンマ入り数値パターン（例: "80,000", "110,000"）
+        cleaned = notes_str.replace(",", "").replace("，", "").strip()
         m = re.search(r"(\d+)", cleaned)
         if m:
             val = int(m.group(1))

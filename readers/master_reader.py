@@ -295,27 +295,28 @@ def read_master_file(
 
 
 def read_all_facilities_masters(
-    input_dir: str | Path,
     config: dict,
     year: int,
     month: int,
 ) -> dict[str, tuple[list[ResidentMaster], list[RxRow]]]:
     """全拠点の請求マスターを読む。
 
+    config["input"] セクションからファイルパスを解決する。
+
     Returns:
         {拠点名: (入居者マスタ, RX.Xデータ)} の辞書
     """
-    input_path = Path(input_dir)
+    input_conf = config["input"]
+    base_dir = Path(input_conf["base_dir"])
     result = {}
 
-    for facility_name, fconf in config["facilities"].items():
-        prefix = fconf["file_prefix"]
-        candidates = list(input_path.glob(f"{prefix}*"))
-        if not candidates:
+    for facility_name, fpath_conf in input_conf["facilities"].items():
+        filepath = base_dir / fpath_conf["dir"] / fpath_conf["master"]
+        if not filepath.exists():
             raise FileNotFoundError(
-                f"Master file not found for {facility_name}: {prefix}*"
+                f"Master file not found for {facility_name}: {filepath}"
             )
-        filepath = candidates[0]
+        fconf = config["facilities"][facility_name]
         residents, rx_rows = read_master_file(filepath, fconf, year, month)
         result[facility_name] = (residents, rx_rows)
 

@@ -23,8 +23,8 @@ from calc.meal_calc import calc_all_meals
 from calc.nick_calc import calc_all_nick
 from calc.billing import build_all_billings, BillingResult
 
-DATA_DIR = PROJECT_ROOT / "参考"
 CONFIG = load_config(str(PROJECT_ROOT / "config.yaml"))
+INPUT_BASE = PROJECT_ROOT / CONFIG["input"]["base_dir"]
 
 
 # ============================================================
@@ -34,7 +34,8 @@ CONFIG = load_config(str(PROJECT_ROOT / "config.yaml"))
 class TestMealCalc:
     @pytest.fixture(scope="class")
     def serene_meal_by_room(self):
-        records = read_meal_file(DATA_DIR / "食費管理表【セレーネ】.xlsx", 2026, 1)
+        fpath = CONFIG["input"]["facilities"]["セレーネ"]
+        records = read_meal_file(INPUT_BASE / fpath["dir"] / fpath["meal"], 2026, 1)
         return calc_all_meals(records, CONFIG)
 
     def test_serene_kato_meal(self, serene_meal_by_room):
@@ -55,9 +56,10 @@ class TestMealCalc:
 
     def test_serene_meal_vs_master(self, serene_meal_by_room):
         """セレーネ: 食費計算値と請求マスターR8.1のI列が全員一致"""
+        fpath = CONFIG["input"]["facilities"]["セレーネ"]
         fconf = CONFIG["facilities"]["セレーネ"]
         _, rx_rows = read_master_file(
-            DATA_DIR / "ええすまい請求(セレーネ)_.xlsx", fconf, 2026, 1
+            INPUT_BASE / fpath["dir"] / fpath["master"], fconf, 2026, 1
         )
         mismatches = []
         for rx in rx_rows:
@@ -80,10 +82,12 @@ class TestNickCalc:
     @pytest.fixture(scope="class")
     def serene_nick_by_room(self):
         """セレーネ拠点のみのニック計算（居室番号衝突を避ける）"""
-        nick_records = read_nick_file(DATA_DIR / "ニック請求.xlsx", 2026, 1)
+        common_dir = INPUT_BASE / CONFIG["input"]["common_dir"]
+        nick_records = read_nick_file(common_dir / CONFIG["input"]["nick_file"], 2026, 1)
+        fpath = CONFIG["input"]["facilities"]["セレーネ"]
         fconf = CONFIG["facilities"]["セレーネ"]
         _, rx_rows = read_master_file(
-            DATA_DIR / "ええすまい請求(セレーネ)_.xlsx", fconf, 2026, 1
+            INPUT_BASE / fpath["dir"] / fpath["master"], fconf, 2026, 1
         )
         room_name_map = {rx.room: rx.name for rx in rx_rows if rx.room and rx.name}
         return calc_all_nick(nick_records, room_name_map, CONFIG)
@@ -91,13 +95,14 @@ class TestNickCalc:
     @pytest.fixture(scope="class")
     def all_nick_by_facility(self):
         """全拠点のニック計算（拠点ごとに別々のroom_name_map）"""
-        nick_records = read_nick_file(DATA_DIR / "ニック請求.xlsx", 2026, 1)
+        common_dir = INPUT_BASE / CONFIG["input"]["common_dir"]
+        nick_records = read_nick_file(common_dir / CONFIG["input"]["nick_file"], 2026, 1)
         result = {}
-        for fname, fconf in CONFIG["facilities"].items():
-            prefix = fconf["file_prefix"]
-            candidates = list(DATA_DIR.glob(f"{prefix}*"))
-            if candidates:
-                _, rx_rows = read_master_file(candidates[0], fconf, 2026, 1)
+        for fname, fpath_conf in CONFIG["input"]["facilities"].items():
+            filepath = INPUT_BASE / fpath_conf["dir"] / fpath_conf["master"]
+            fconf = CONFIG["facilities"][fname]
+            if filepath.exists():
+                _, rx_rows = read_master_file(filepath, fconf, 2026, 1)
                 room_name_map = {rx.room: rx.name for rx in rx_rows if rx.room and rx.name}
                 result[fname] = calc_all_nick(nick_records, room_name_map, CONFIG)
         return result
@@ -130,15 +135,17 @@ class TestNickCalc:
 class TestBilling:
     @pytest.fixture(scope="class")
     def serene_billings(self):
+        fpath = CONFIG["input"]["facilities"]["セレーネ"]
         # 食費
-        meal_records = read_meal_file(DATA_DIR / "食費管理表【セレーネ】.xlsx", 2026, 1)
+        meal_records = read_meal_file(INPUT_BASE / fpath["dir"] / fpath["meal"], 2026, 1)
         meal_by_room = calc_all_meals(meal_records, CONFIG)
 
         # ニック
-        nick_records = read_nick_file(DATA_DIR / "ニック請求.xlsx", 2026, 1)
+        common_dir = INPUT_BASE / CONFIG["input"]["common_dir"]
+        nick_records = read_nick_file(common_dir / CONFIG["input"]["nick_file"], 2026, 1)
         fconf = CONFIG["facilities"]["セレーネ"]
         _, rx_rows = read_master_file(
-            DATA_DIR / "ええすまい請求(セレーネ)_.xlsx", fconf, 2026, 1
+            INPUT_BASE / fpath["dir"] / fpath["master"], fconf, 2026, 1
         )
         room_name_map = {rx.room: rx.name for rx in rx_rows if rx.room and rx.name}
         nick_by_room = calc_all_nick(nick_records, room_name_map, CONFIG)

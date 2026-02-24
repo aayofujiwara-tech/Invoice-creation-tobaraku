@@ -3,14 +3,14 @@
 食費管理表 ＋ ニック請求カレンダー → 請求集約シート(RX.X) → 請求書・領収書・合算明細書
 
 Usage:
-    python main.py --month 2026-01 --input-dir ./参考 --output-dir ./output
-    python main.py --month 2026-01  # デフォルト: input=./参考, output=./output
+    python main.py --month 2026-01
+    python main.py --month 2026-01 --issue-date 2026-02-03
 """
 
 import argparse
 import shutil
 import sys
-from datetime import date
+from datetime import date, datetime
 from pathlib import Path
 
 from utils.helpers import load_config, parse_month_arg, to_reiwa_label
@@ -26,6 +26,29 @@ from writers.receipt_writer import write_all_receipts
 from writers.combined_writer import write_all_combined
 
 
+def resolve_input_paths(config: dict) -> dict:
+    """config.yaml の input セクションからファイルパスを解決する。
+
+    Returns:
+        {拠点名: {"master": Path, "meal": Path}, "nick": Path} の辞書
+    """
+    input_conf = config["input"]
+    base_dir = Path(input_conf["base_dir"])
+    paths = {}
+
+    for facility_name, fconf in input_conf["facilities"].items():
+        facility_dir = base_dir / fconf["dir"]
+        paths[facility_name] = {
+            "master": facility_dir / fconf["master"],
+            "meal": facility_dir / fconf["meal"],
+        }
+
+    common_dir = base_dir / input_conf["common_dir"]
+    paths["nick"] = common_dir / input_conf["nick_file"]
+
+    return paths
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="ええすまい請求自動化システム",
@@ -33,14 +56,6 @@ def main():
     parser.add_argument(
         "--month", required=True,
         help="対象年月 (YYYY-MM形式、例: 2026-01)",
-    )
-    parser.add_argument(
-        "--input-dir", default="./参考",
-        help="入力データディレクトリ (default: ./参考)",
-    )
-    parser.add_argument(
-        "--output-dir", default="./output",
-        help="出力ディレクトリ (default: ./output)",
     )
     parser.add_argument(
         "--issue-date", default=None,
@@ -60,9 +75,15 @@ def main():
     # --- パラメータ解析 ---
     year, month = parse_month_arg(args.month)
     reiwa_label = to_reiwa_label(year, month)
-    input_dir = Path(args.input_dir)
-    output_base = Path(args.output_dir) / f"{year}-{month:02d}"
     config = load_config(args.config)
+
+    # 入力パスを解決
+    input_paths = resolve_input_paths(config)
+
+    # 出力先: output/YYYYMMDD_HHMM/
+    output_base_dir = Path(config["output"]["base_dir"])
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M")
+    output_base = output_base_dir / timestamp
 
     # 発行日: 指定がなければ翌月3日
     if args.issue_date:
@@ -74,7 +95,7 @@ def main():
 
     print(f"=== ええすまい請求自動化 ===")
     print(f"対象月: {reiwa_label} ({year}年{month}月)")
-    print(f"入力: {input_dir}")
+    print(f"入力: {config['input']['base_dir']}")
     print(f"出力: {output_base}")
     print(f"発行日: {issue_date}")
     print()
@@ -84,18 +105,22 @@ def main():
 
     # 食費管理表
     print("食費管理表を読み取り中...")
-    try:
-        meals_by_facility = read_all_facilities_meals(input_dir, config, year, month)
-        for fname, records in meals_by_facility.items():
+    meals_by_facility = {}
+    for fname in config["facilities"]:
+        meal_path = input_paths[fname]["meal"]
+        try:
+            from readers.meal_reader import read_meal_file
+            records = read_meal_file(meal_path, year, month)
+            meals_by_facility[fname] = records
             active = [r for r in records if not r.is_empty]
             print(f"  {fname}: {len(records)}スロット, {len(active)}名の食事データ")
-    except Exception as e:
-        print(f"  食費管理表の読取エラー: {e}")
-        meals_by_facility = {}
+        except Exception as e:
+            print(f"  {fname}: 食費管理表の読取エラー: {e}")
+            meals_by_facility[fname] = []
 
     # ニック請求
     print("ニック請求を読み取り中...")
-    nick_file = input_dir / config["nick_file"]
+    nick_file = input_paths["nick"]
     try:
         nick_records = read_nick_file(nick_file, year, month)
         print(f"  {len(nick_records)}名のニックデータ")
@@ -105,19 +130,24 @@ def main():
 
     # 請求マスター
     print("請求マスターを読み取り中...")
-    masters_by_facility = read_all_facilities_masters(input_dir, config, year, month)
-    for fname, (residents, rx_rows) in masters_by_facility.items():
-        active = [r for r in rx_rows if not r.is_vacant]
-        print(f"  {fname}: {len(residents)}入居者マスタ, {len(active)}名のRXデータ")
+    masters_by_facility = {}
+    for fname in config["facilities"]:
+        master_path = input_paths[fname]["master"]
+        try:
+            from readers.master_reader import read_master_file
+            fconf = config["facilities"][fname]
+            residents, rx_rows = read_master_file(master_path, fconf, year, month)
+            masters_by_facility[fname] = (residents, rx_rows)
+            active = [r for r in rx_rows if not r.is_vacant]
+            print(f"  {fname}: {len(residents)}入居者マスタ, {len(active)}名のRXデータ")
+        except Exception as e:
+            print(f"  {fname}: 請求マスターの読取エラー: {e}")
 
     print()
 
     # --- Phase 2: 計算 ---
     print("--- Phase 2: 計算 ---")
 
-    # 拠点ごとに食費計算・ニック計算→請求集約
-    # ※居室番号が拠点間で重複するため（例: 703がセレーネ/パシフィック両方に存在）、
-    #   ニック計算は拠点ごとに別のroom_name_mapを使って実行する
     all_billings: dict[str, list] = {}
 
     for fname, (residents, rx_rows) in masters_by_facility.items():
@@ -152,10 +182,8 @@ def main():
         facility_output = output_base / fname
 
         # RX.Xシート更新
-        prefix = fconf["file_prefix"]
-        master_candidates = list(input_dir.glob(f"{prefix}*"))
-        if master_candidates:
-            master_src = master_candidates[0]
+        master_src = input_paths[fname]["master"]
+        if master_src.exists():
             master_dst = facility_output / master_src.name
             master_dst.parent.mkdir(parents=True, exist_ok=True)
 

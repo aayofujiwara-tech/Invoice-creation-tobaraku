@@ -46,11 +46,33 @@ fixed_charges:
   water: 2000          # 水道料金
   utility: 10000       # 定額光熱費
 
+# 入力フォルダ設定
+input:
+  base_dir: ./input
+  facilities:
+    セレーネ:
+      dir: セレーネ
+      master: "ええすまい請求(セレーネ)_.xlsx"
+      meal: "食費管理表【セレーネ】.xlsx"
+    パシフィック:
+      dir: パシフィック
+      master: "ええすまい請求(パシフィック).xlsx"
+      meal: "食費管理表【パシフィック】.xlsx"
+    ルネッサンス:
+      dir: ルネッサンス
+      master: "ええすまい請求(ルネッサンス)_.xlsx"
+      meal: "食費管理表【ルネッサンス】.xlsx"
+  common_dir: 共通
+  nick_file: "ニック請求.xlsx"
+
+# 出力フォルダ設定
+output:
+  base_dir: ./output
+  # 実行時に YYYYMMDD_HHMM フォルダを自動生成
+
 # 拠点設定
 facilities:
   セレーネ:
-    file_prefix: "ええすまい請求(セレーネ)_"
-    meal_file_prefix: "食費管理表【セレーネ】"
     display_name: "マンションセレーネ（ええすまい）"
     resident_sheet: "入居者"
     invoice_sheet: "すまい請求書"
@@ -59,8 +81,6 @@ facilities:
     room_format: "numeric"  # 数字3-4桁
 
   パシフィック:
-    file_prefix: "ええすまい請求(パシフィック)"
-    meal_file_prefix: "食費管理表【パシフィック】"
     display_name: "パシフィック塚本（ええすまい）"
     resident_sheet: "利用者"
     invoice_sheet: "すまい請求書"
@@ -69,17 +89,12 @@ facilities:
     room_format: "numeric"
 
   ルネッサンス:
-    file_prefix: "ええすまい請求(ルネッサンス)_"
-    meal_file_prefix: "食費管理表【ルネッサンス】"
     display_name: "ルネッサンス塚本（ええすまい）"
     resident_sheet: "入居者"
     invoice_sheet: "すまい請求書"
     receipt_sheet: "領収書（自動）"
     combined_sheet: "合算明細書"
     room_format: "alphanumeric"  # 英数混合 (2A, 5B等)
-
-# ニック請求ファイル
-nick_file: "ニック請求.xlsx"
 
 # RX.Xシート列マッピング（新フォーマット R7.8以降）
 rx_columns:

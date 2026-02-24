@@ -203,30 +203,28 @@ def read_meal_file(filepath: str | Path, year: int, month: int) -> list[MealReco
 
 
 def read_all_facilities_meals(
-    input_dir: str | Path,
     config: dict,
     year: int,
     month: int,
 ) -> dict[str, list[MealRecord]]:
     """全拠点の食費管理表を読み取る。
 
+    config["input"] セクションからファイルパスを解決する。
+
     Returns:
         {拠点名: [MealRecord, ...]} の辞書
     """
-    input_path = Path(input_dir)
+    input_conf = config["input"]
+    base_dir = Path(input_conf["base_dir"])
     result = {}
 
-    for facility_name, fconf in config["facilities"].items():
-        prefix = fconf["meal_file_prefix"]
-        # ファイル名を検索
-        candidates = list(input_path.glob(f"{prefix}*"))
-        if not candidates:
+    for facility_name, fpath_conf in input_conf["facilities"].items():
+        filepath = base_dir / fpath_conf["dir"] / fpath_conf["meal"]
+        if not filepath.exists():
             raise FileNotFoundError(
-                f"Meal file not found for {facility_name}: {prefix}*"
+                f"Meal file not found for {facility_name}: {filepath}"
             )
-        filepath = candidates[0]
         records = read_meal_file(filepath, year, month)
-        # 空でない入居者のみフィルタ（空室は除外）
         result[facility_name] = records
 
     return result

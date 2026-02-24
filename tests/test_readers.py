@@ -20,8 +20,8 @@ from readers.meal_reader import read_meal_file, read_all_facilities_meals
 from readers.nick_reader import read_nick_file
 from readers.master_reader import read_master_file, read_rx_sheet
 
-DATA_DIR = PROJECT_ROOT / "参考"
 CONFIG = load_config(str(PROJECT_ROOT / "config.yaml"))
+INPUT_BASE = PROJECT_ROOT / CONFIG["input"]["base_dir"]
 
 
 # ============================================================
@@ -102,17 +102,20 @@ class TestNameMatch:
 class TestMealReader:
     @pytest.fixture(scope="class")
     def serene_meals(self):
-        filepath = DATA_DIR / "食費管理表【セレーネ】.xlsx"
+        fpath = CONFIG["input"]["facilities"]["セレーネ"]
+        filepath = INPUT_BASE / fpath["dir"] / fpath["meal"]
         return read_meal_file(filepath, 2026, 1)
 
     @pytest.fixture(scope="class")
     def pacific_meals(self):
-        filepath = DATA_DIR / "食費管理表【パシフィック】.xlsx"
+        fpath = CONFIG["input"]["facilities"]["パシフィック"]
+        filepath = INPUT_BASE / fpath["dir"] / fpath["meal"]
         return read_meal_file(filepath, 2026, 1)
 
     @pytest.fixture(scope="class")
     def renaissance_meals(self):
-        filepath = DATA_DIR / "食費管理表【ルネッサンス】.xlsx"
+        fpath = CONFIG["input"]["facilities"]["ルネッサンス"]
+        filepath = INPUT_BASE / fpath["dir"] / fpath["meal"]
         return read_meal_file(filepath, 2026, 1)
 
     def test_serene_record_count(self, serene_meals):
@@ -181,7 +184,8 @@ class TestMealReader:
 class TestNickReader:
     @pytest.fixture(scope="class")
     def nick_records(self):
-        filepath = DATA_DIR / "ニック請求.xlsx"
+        common_dir = INPUT_BASE / CONFIG["input"]["common_dir"]
+        filepath = common_dir / CONFIG["input"]["nick_file"]
         return read_nick_file(filepath, 2026, 1)
 
     def test_record_count(self, nick_records):
@@ -243,13 +247,15 @@ class TestNickReader:
 class TestMasterReader:
     @pytest.fixture(scope="class")
     def serene_master(self):
-        filepath = DATA_DIR / "ええすまい請求(セレーネ)_.xlsx"
+        fpath = CONFIG["input"]["facilities"]["セレーネ"]
+        filepath = INPUT_BASE / fpath["dir"] / fpath["master"]
         fconf = CONFIG["facilities"]["セレーネ"]
         return read_master_file(filepath, fconf, 2026, 1)
 
     @pytest.fixture(scope="class")
     def pacific_master(self):
-        filepath = DATA_DIR / "ええすまい請求(パシフィック).xlsx"
+        fpath = CONFIG["input"]["facilities"]["パシフィック"]
+        filepath = INPUT_BASE / fpath["dir"] / fpath["master"]
         fconf = CONFIG["facilities"]["パシフィック"]
         return read_master_file(filepath, fconf, 2026, 1)
 
@@ -323,10 +329,11 @@ class TestMealCrossValidation:
 
     @pytest.fixture(scope="class")
     def serene_data(self):
-        meals = read_meal_file(DATA_DIR / "食費管理表【セレーネ】.xlsx", 2026, 1)
+        fpath = CONFIG["input"]["facilities"]["セレーネ"]
+        meals = read_meal_file(INPUT_BASE / fpath["dir"] / fpath["meal"], 2026, 1)
         fconf = CONFIG["facilities"]["セレーネ"]
         _, rx_rows = read_master_file(
-            DATA_DIR / "ええすまい請求(セレーネ)_.xlsx", fconf, 2026, 1
+            INPUT_BASE / fpath["dir"] / fpath["master"], fconf, 2026, 1
         )
         return meals, rx_rows
 
@@ -365,14 +372,15 @@ class TestNickCrossValidation:
 
     @pytest.fixture(scope="class")
     def validation_data(self):
-        nick_records = read_nick_file(DATA_DIR / "ニック請求.xlsx", 2026, 1)
+        common_dir = INPUT_BASE / CONFIG["input"]["common_dir"]
+        nick_records = read_nick_file(common_dir / CONFIG["input"]["nick_file"], 2026, 1)
         # 全拠点のマスターを読む
         all_rx = {}
-        for fname, fconf in CONFIG["facilities"].items():
-            prefix = fconf["file_prefix"]
-            candidates = list(DATA_DIR.glob(f"{prefix}*"))
-            if candidates:
-                _, rx_rows = read_master_file(candidates[0], fconf, 2026, 1)
+        for fname, fpath_conf in CONFIG["input"]["facilities"].items():
+            filepath = INPUT_BASE / fpath_conf["dir"] / fpath_conf["master"]
+            fconf = CONFIG["facilities"][fname]
+            if filepath.exists():
+                _, rx_rows = read_master_file(filepath, fconf, 2026, 1)
                 for r in rx_rows:
                     if r.room and not r.is_vacant:
                         all_rx[r.room] = r

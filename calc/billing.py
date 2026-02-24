@@ -70,6 +70,7 @@ def build_billing(
     diaper_amount: int | None,
     supply_amount: int | None,
     config: dict,
+    is_new_month: bool = False,
 ) -> BillingResult:
     """1入居者の請求データを構築する。
 
@@ -83,10 +84,26 @@ def build_billing(
         diaper_amount: オムツ月額（ニック請求から計算、Noneなら既存値を使用）
         supply_amount: 日用品月額（ニック請求から計算、Noneなら既存値を使用）
         config: config.yaml の内容
+        is_new_month: Trueなら前月データからの新規作成（手入力列はクリア）
 
     Returns:
         BillingResult
     """
+    # 新規月の場合: 分納残を前月の分割残高（C - M）に更新
+    if is_new_month:
+        new_installment_balance = _val(rx_row.installment_balance) - _val(rx_row.installment)
+        if new_installment_balance < 0:
+            new_installment_balance = 0
+    else:
+        new_installment_balance = _val(rx_row.installment_balance)
+
+    # 新規月の場合: 分割支払いは分納残が残っていれば継続
+    if is_new_month:
+        installment_monthly = config.get("installment_monthly", 10000)
+        new_installment = installment_monthly if new_installment_balance > 0 else 0
+    else:
+        new_installment = _val(rx_row.installment)
+
     result = BillingResult(
         room=rx_row.room,
         name=rx_row.name,
@@ -101,16 +118,16 @@ def build_billing(
         diaper=diaper_amount if diaper_amount is not None else _val(rx_row.diaper),
         daily_supplies=supply_amount if supply_amount is not None else _val(rx_row.daily_supplies),
         # 分割
-        installment_balance=_val(rx_row.installment_balance),
-        installment=_val(rx_row.installment),
-        # 手入力項目はそのまま引き継ぎ
-        office_fee=_val(rx_row.office_fee),
-        day_service=_val(rx_row.day_service),
-        welfare_equip=_val(rx_row.welfare_equip),
-        pharmacy=_val(rx_row.pharmacy),
-        doctor=_val(rx_row.doctor),
-        support=_val(rx_row.support),
-        other=_val(rx_row.other),
+        installment_balance=new_installment_balance,
+        installment=new_installment,
+        # 手入力項目: 新規月はクリア、既存月はそのまま引き継ぎ
+        office_fee=0 if is_new_month else _val(rx_row.office_fee),
+        day_service=0 if is_new_month else _val(rx_row.day_service),
+        welfare_equip=0 if is_new_month else _val(rx_row.welfare_equip),
+        pharmacy=0 if is_new_month else _val(rx_row.pharmacy),
+        doctor=0 if is_new_month else _val(rx_row.doctor),
+        support=0 if is_new_month else _val(rx_row.support),
+        other=0 if is_new_month else _val(rx_row.other),
         # 介護・看護負担はそのまま引き継ぎ
         care_burden=_val(rx_row.care_burden),
         nurse_burden=_val(rx_row.nurse_burden),
@@ -180,6 +197,7 @@ def build_all_billings(
     meal_by_room: dict[str, int],
     nick_by_room: dict[str, tuple[int, int]],
     config: dict,
+    is_new_month: bool = False,
 ) -> list[BillingResult]:
     """全入居者の請求データを構築する。
 
@@ -188,6 +206,7 @@ def build_all_billings(
         meal_by_room: {居室番号: 食費月額}
         nick_by_room: {居室番号: (オムツ, 日用品)}
         config: config.yaml
+        is_new_month: Trueなら前月データからの新規作成
 
     Returns:
         BillingResultのリスト
@@ -199,7 +218,10 @@ def build_all_billings(
         diaper_amount = nick_data[0] if nick_data else None
         supply_amount = nick_data[1] if nick_data else None
 
-        billing = build_billing(rx, meal_amount, diaper_amount, supply_amount, config)
+        billing = build_billing(
+            rx, meal_amount, diaper_amount, supply_amount, config,
+            is_new_month=is_new_month,
+        )
         results.append(billing)
 
     return results

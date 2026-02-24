@@ -261,12 +261,12 @@ class TestMasterReader:
 
     def test_serene_residents(self, serene_master):
         """セレーネ入居者マスタ: 801✕含めて12行"""
-        residents, _ = serene_master
+        residents, _, _ = serene_master
         assert len(residents) >= 10
 
     def test_serene_rx_rows(self, serene_master):
         """セレーネR8.1: 入居者行が取得できる"""
-        _, rx_rows = serene_master
+        _, rx_rows, _ = serene_master
         assert len(rx_rows) > 0
         # 空室を除いた実データ行
         active = [r for r in rx_rows if not r.is_vacant]
@@ -274,7 +274,7 @@ class TestMasterReader:
 
     def test_serene_okamura(self, serene_master):
         """セレーネ: 岡村三男(608) — 固定費のみ62,000円"""
-        _, rx_rows = serene_master
+        _, rx_rows, _ = serene_master
         okamura = [r for r in rx_rows if r.room == "608"]
         assert len(okamura) == 1
         r = okamura[0]
@@ -283,7 +283,7 @@ class TestMasterReader:
 
     def test_serene_ando(self, serene_master):
         """セレーネ: 安藤静子(703) — 合計90,000, 調整額-45,578"""
-        _, rx_rows = serene_master
+        _, rx_rows, _ = serene_master
         ando = [r for r in rx_rows if r.room == "703"]
         assert len(ando) == 1
         r = ando[0]
@@ -293,7 +293,7 @@ class TestMasterReader:
 
     def test_serene_fujimoto(self, serene_master):
         """セレーネ: 藤本敏博(906) — 合計110,000, 分納残62,000"""
-        _, rx_rows = serene_master
+        _, rx_rows, _ = serene_master
         fujimoto = [r for r in rx_rows if r.room == "906"]
         assert len(fujimoto) == 1
         r = fujimoto[0]
@@ -303,7 +303,7 @@ class TestMasterReader:
 
     def test_serene_araki(self, serene_master):
         """セレーネ: 荒木のり子(1006) — 食事31,900"""
-        _, rx_rows = serene_master
+        _, rx_rows, _ = serene_master
         araki = [r for r in rx_rows if r.room == "1006"]
         assert len(araki) == 1
         r = araki[0]
@@ -311,12 +311,12 @@ class TestMasterReader:
 
     def test_pacific_residents(self, pacific_master):
         """パシフィック入居者マスタ"""
-        residents, _ = pacific_master
+        residents, _, _ = pacific_master
         assert len(residents) >= 15
 
     def test_pacific_rx_rows(self, pacific_master):
         """パシフィックR8.1: データ行が取得できる"""
-        _, rx_rows = pacific_master
+        _, rx_rows, _ = pacific_master
         assert len(rx_rows) > 0
 
 
@@ -332,7 +332,7 @@ class TestMealCrossValidation:
         fpath = CONFIG["input"]["facilities"]["セレーネ"]
         meals = read_meal_file(INPUT_BASE / fpath["dir"] / fpath["meal"], 2026, 1)
         fconf = CONFIG["facilities"]["セレーネ"]
-        _, rx_rows = read_master_file(
+        _, rx_rows, _ = read_master_file(
             INPUT_BASE / fpath["dir"] / fpath["master"], fconf, 2026, 1
         )
         return meals, rx_rows
@@ -380,7 +380,7 @@ class TestNickCrossValidation:
             filepath = INPUT_BASE / fpath_conf["dir"] / fpath_conf["master"]
             fconf = CONFIG["facilities"][fname]
             if filepath.exists():
-                _, rx_rows = read_master_file(filepath, fconf, 2026, 1)
+                _, rx_rows, _ = read_master_file(filepath, fconf, 2026, 1)
                 for r in rx_rows:
                     if r.room and not r.is_vacant:
                         all_rx[r.room] = r

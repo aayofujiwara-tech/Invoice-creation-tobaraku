@@ -131,15 +131,20 @@ def main():
     # 請求マスター
     print("請求マスターを読み取り中...")
     masters_by_facility = {}
+    new_month_flags: dict[str, bool] = {}
     for fname in config["facilities"]:
         master_path = input_paths[fname]["master"]
         try:
             from readers.master_reader import read_master_file
             fconf = config["facilities"][fname]
-            residents, rx_rows = read_master_file(master_path, fconf, year, month)
+            residents, rx_rows, is_new_month = read_master_file(
+                master_path, fconf, year, month, allow_fallback=True
+            )
             masters_by_facility[fname] = (residents, rx_rows)
+            new_month_flags[fname] = is_new_month
             active = [r for r in rx_rows if not r.is_vacant]
-            print(f"  {fname}: {len(residents)}入居者マスタ, {len(active)}名のRXデータ")
+            status = "（前月データから新規作成）" if is_new_month else ""
+            print(f"  {fname}: {len(residents)}入居者マスタ, {len(active)}名のRXデータ{status}")
         except Exception as e:
             print(f"  {fname}: 請求マスターの読取エラー: {e}")
 
@@ -151,6 +156,8 @@ def main():
     all_billings: dict[str, list] = {}
 
     for fname, (residents, rx_rows) in masters_by_facility.items():
+        is_new_month = new_month_flags.get(fname, False)
+
         # 食費計算
         meal_records = meals_by_facility.get(fname, [])
         meal_by_room = calc_all_meals(meal_records, config)
@@ -162,7 +169,10 @@ def main():
         print(f"  {fname}: ニック計算完了 ({len(nick_by_room)}名)")
 
         # 請求集約
-        billings = build_all_billings(rx_rows, meal_by_room, nick_by_room, config)
+        billings = build_all_billings(
+            rx_rows, meal_by_room, nick_by_room, config,
+            is_new_month=is_new_month,
+        )
         all_billings[fname] = billings
 
         # 結果サマリー

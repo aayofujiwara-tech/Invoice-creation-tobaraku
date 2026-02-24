@@ -252,12 +252,39 @@ def read_rx_sheet(ws) -> list[RxRow]:
     return rows
 
 
+def _find_latest_rx_sheet(wb: openpyxl.Workbook, year: int, month: int) -> str | None:
+    """対象月以前の最新RX.Xシートを探す。
+
+    対象月のシートが見つからない場合、直前月から過去12ヶ月を遡って探す。
+    """
+    from utils.helpers import parse_reiwa_label
+
+    # RX.X形式のシートを収集して年月でソート
+    rx_sheets = []
+    for name in wb.sheetnames:
+        try:
+            y, m = parse_reiwa_label(name)
+            rx_sheets.append((y, m, name))
+        except ValueError:
+            continue
+
+    if not rx_sheets:
+        return None
+
+    # 対象月以前のシートを新しい順にソート
+    candidates = [(y, m, n) for y, m, n in rx_sheets if (y, m) < (year, month)]
+    candidates.sort(key=lambda x: (x[0], x[1]), reverse=True)
+
+    return candidates[0][2] if candidates else None
+
+
 def read_master_file(
     filepath: str | Path,
     facility_config: dict,
     year: int,
     month: int,
-) -> tuple[list[ResidentMaster], list[RxRow]]:
+    allow_fallback: bool = False,
+) -> tuple[list[ResidentMaster], list[RxRow], bool]:
     """請求マスターファイルから入居者マスタとRX.Xデータを読む。
 
     Args:
@@ -265,9 +292,11 @@ def read_master_file(
         facility_config: config.yaml の facilities.{拠点名} セクション
         year: 西暦年
         month: 月
+        allow_fallback: Trueの場合、対象月シートがなければ直前月を使用
 
     Returns:
-        (入居者マスタリスト, RX.Xデータリスト)
+        (入居者マスタリスト, RX.Xデータリスト, is_new_month)
+        is_new_month: Trueなら直前月のデータを使用（対象月シートが未存在）
     """
     wb = openpyxl.load_workbook(str(filepath), data_only=True)
 
@@ -283,15 +312,29 @@ def read_master_file(
 
     # RX.Xシート
     rx_label = to_reiwa_label(year, month)
-    if rx_label not in wb.sheetnames:
+    is_new_month = False
+
+    if rx_label in wb.sheetnames:
+        rx_rows = read_rx_sheet(wb[rx_label])
+    elif allow_fallback:
+        # 直前月のシートを探す
+        fallback_label = _find_latest_rx_sheet(wb, year, month)
+        if fallback_label is None:
+            wb.close()
+            raise ValueError(
+                f"Sheet '{rx_label}' not found and no previous month sheet available. "
+                f"Available: {wb.sheetnames}"
+            )
+        rx_rows = read_rx_sheet(wb[fallback_label])
+        is_new_month = True
+    else:
         wb.close()
         raise ValueError(
             f"Sheet '{rx_label}' not found. Available: {wb.sheetnames}"
         )
-    rx_rows = read_rx_sheet(wb[rx_label])
 
     wb.close()
-    return residents, rx_rows
+    return residents, rx_rows, is_new_month
 
 
 def read_all_facilities_masters(
@@ -317,7 +360,7 @@ def read_all_facilities_masters(
                 f"Master file not found for {facility_name}: {filepath}"
             )
         fconf = config["facilities"][facility_name]
-        residents, rx_rows = read_master_file(filepath, fconf, year, month)
+        residents, rx_rows, _ = read_master_file(filepath, fconf, year, month)
         result[facility_name] = (residents, rx_rows)
 
     return result

@@ -58,7 +58,7 @@ class TestMealCalc:
         """セレーネ: 食費計算値と請求マスターR8.1のI列が全員一致"""
         fpath = CONFIG["input"]["facilities"]["セレーネ"]
         fconf = CONFIG["facilities"]["セレーネ"]
-        _, rx_rows = read_master_file(
+        _, rx_rows, _ = read_master_file(
             INPUT_BASE / fpath["dir"] / fpath["master"], fconf, 2026, 1
         )
         mismatches = []
@@ -86,7 +86,7 @@ class TestNickCalc:
         nick_records = read_nick_file(common_dir / CONFIG["input"]["nick_file"], 2026, 1)
         fpath = CONFIG["input"]["facilities"]["セレーネ"]
         fconf = CONFIG["facilities"]["セレーネ"]
-        _, rx_rows = read_master_file(
+        _, rx_rows, _ = read_master_file(
             INPUT_BASE / fpath["dir"] / fpath["master"], fconf, 2026, 1
         )
         room_name_map = {rx.room: rx.name for rx in rx_rows if rx.room and rx.name}
@@ -102,7 +102,7 @@ class TestNickCalc:
             filepath = INPUT_BASE / fpath_conf["dir"] / fpath_conf["master"]
             fconf = CONFIG["facilities"][fname]
             if filepath.exists():
-                _, rx_rows = read_master_file(filepath, fconf, 2026, 1)
+                _, rx_rows, _ = read_master_file(filepath, fconf, 2026, 1)
                 room_name_map = {rx.room: rx.name for rx in rx_rows if rx.room and rx.name}
                 result[fname] = calc_all_nick(nick_records, room_name_map, CONFIG)
         return result
@@ -144,7 +144,7 @@ class TestBilling:
         common_dir = INPUT_BASE / CONFIG["input"]["common_dir"]
         nick_records = read_nick_file(common_dir / CONFIG["input"]["nick_file"], 2026, 1)
         fconf = CONFIG["facilities"]["セレーネ"]
-        _, rx_rows = read_master_file(
+        _, rx_rows, _ = read_master_file(
             INPUT_BASE / fpath["dir"] / fpath["master"], fconf, 2026, 1
         )
         room_name_map = {rx.room: rx.name for rx in rx_rows if rx.room and rx.name}

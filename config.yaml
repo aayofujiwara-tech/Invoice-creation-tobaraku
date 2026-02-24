@@ -1,0 +1,141 @@
+# AA Group ええすまい請求自動化 設定ファイル
+
+# 食費単価（円/食）
+meal_prices:
+  breakfast: 330   # 朝食
+  lunch: 550       # 昼食
+  dinner: 550      # 夕食
+
+# ニック請求 基本単価（税込、円/日）— ニック料金表.pngから読取
+nick_base_prices:
+  Ａ: 820
+  Ｂ: 600
+  Ｃ: 450
+  Ｄ: 300
+  Ｅ: 200
+  Ｆ: 100
+  Ｇ: 50
+  用: 120
+  福: 60
+  ふ: 60
+  # 福祉オムツセット（小文字表記）
+  a: 765
+  b: 600
+  c: 450
+  d: 300
+  に: 120
+
+# ニック請求 マークアップ後の請求単価（円/日）
+# Aセットは908円固定、それ以外は ceil(基本単価 × 1.21)
+nick_markup_rate: 1.21
+nick_price_overrides:
+  Ａ: 908  # Aセットのみ例外（10.7%マークアップ）
+
+# 福祉受給者の上限額はRX.Xシートの備考欄(AA列)から読み取る
+# デフォルト上限（備考欄に記載がない場合のフォールバック）
+welfare_default_limit: 110000
+
+# 分割支払い月額
+installment_monthly: 10000
+
+# 固定費（来月分前払い）の標準額
+fixed_charges:
+  rent: 40000          # 家賃
+  management: 5000     # 管理費
+  common: 5000         # 共益費
+  water: 2000          # 水道料金
+  utility: 10000       # 定額光熱費
+
+# 拠点設定
+facilities:
+  セレーネ:
+    file_prefix: "ええすまい請求(セレーネ)_"
+    meal_file_prefix: "食費管理表【セレーネ】"
+    display_name: "マンションセレーネ（ええすまい）"
+    resident_sheet: "入居者"
+    invoice_sheet: "すまい請求書"
+    receipt_sheet: "領収書"
+    combined_sheet: "合算請求書"
+    room_format: "numeric"  # 数字3-4桁
+
+  パシフィック:
+    file_prefix: "ええすまい請求(パシフィック)"
+    meal_file_prefix: "食費管理表【パシフィック】"
+    display_name: "パシフィック塚本（ええすまい）"
+    resident_sheet: "利用者"
+    invoice_sheet: "すまい請求書"
+    receipt_sheet: "すまい領収書"
+    combined_sheet: "合算請求書"
+    room_format: "numeric"
+
+  ルネッサンス:
+    file_prefix: "ええすまい請求(ルネッサンス)_"
+    meal_file_prefix: "食費管理表【ルネッサンス】"
+    display_name: "ルネッサンス塚本（ええすまい）"
+    resident_sheet: "入居者"
+    invoice_sheet: "すまい請求書"
+    receipt_sheet: "領収書（自動）"
+    combined_sheet: "合算明細書"
+    room_format: "alphanumeric"  # 英数混合 (2A, 5B等)
+
+# ニック請求ファイル
+nick_file: "ニック請求.xlsx"
+
+# RX.Xシート列マッピング（新フォーマット R7.8以降）
+rx_columns:
+  room: A           # 居室
+  name: B           # 利用者名
+  installment_balance: C  # 分納残
+  rent: D           # 家賃
+  management: E     # 管理費
+  common: F         # 共益費
+  water: G          # 水道料金
+  utility: H        # 定額光熱費
+  meal: I           # 食事
+  adjustment: J     # 調整額
+  diaper: K         # オムツ
+  daily_supplies: L # 日用品
+  installment: M    # 分割支払い
+  office_fee: N     # 事務手数料
+  day_service: O    # デイサービス
+  welfare_equipment: P  # 福祉用具
+  pharmacy: Q       # しろくま薬局
+  doctor: R         # 往診診療費
+  support: S        # サポート費
+  other: T          # その他
+  subtotal: W       # 計
+  care_burden: X    # 一部負担(介護)
+  nurse_burden: Y   # 一部負担(看護)
+  total: Z          # 合計
+  notes: AA         # 備考
+  invoice_status: AB # 請求書
+  remaining_balance: AC  # 分割残高
+
+# 手入力列（自動計算時に上書きしない）
+manual_columns:
+  - day_service     # O列
+  - welfare_equipment  # P列
+  - pharmacy        # Q列
+  - doctor          # R列
+
+# 食費管理表の列マッピング
+meal_columns:
+  room: A
+  name: B
+  meal_form: C
+  meal_type: D
+  day_start: E      # 日付1日目
+  day_end: AI       # 日付31日目
+  count: AJ         # 食数合計
+  subtotal: AK      # 金額小計
+  billing: AL       # 請求金額（夕食行のみ）
+  notes: AM         # 備考
+
+# ニック請求の列マッピング
+nick_columns:
+  station: A
+  user_id: B
+  name: C
+  set_type: D
+  day_start: E
+  day_end: AI

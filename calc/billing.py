@@ -11,7 +11,7 @@
 """
 
 from dataclasses import dataclass, field
-from readers.master_reader import RxRow
+from readers.master_reader import ResidentMaster, RxRow
 
 
 @dataclass
@@ -190,6 +190,95 @@ def build_billing(
     result.remaining_balance = result.installment_balance - result.installment
 
     return result
+
+
+def merge_residents_into_rx(
+    residents: list[ResidentMaster],
+    rx_rows: list[RxRow],
+    config: dict,
+) -> list[RxRow]:
+    """入居者マスタとRX.Xデータをマージする。
+
+    入居者マスタに存在するがRX.Xに存在しない居室（新規入居者）を
+    標準固定費で追加する。✕付き居室（退居済み）は追加しない。
+
+    また、RX.Xの既存行で名前が空だが入居者マスタに名前がある場合は
+    名前を反映する。
+
+    Args:
+        residents: 入居者マスタリスト
+        rx_rows: RX.Xシートのデータ（前月 or 当月）
+        config: config.yaml の内容
+
+    Returns:
+        マージ済みのRxRowリスト
+    """
+    # 合計行を除外してからマージ
+    filtered_rows = [rx for rx in rx_rows if rx.room != "合計"]
+
+    rx_by_room: dict[str, RxRow] = {}
+    for rx in filtered_rows:
+        if rx.room:
+            rx_by_room[rx.room] = rx
+
+    # 入居者マスタから名前マップを構築（✕なし居室のみ）
+    resident_map: dict[str, str] = {}
+    for res in residents:
+        if not res.room or not res.name:
+            continue
+        # ✕付き居室は退居済み — 新規追加しない
+        if "✕" in res.room or "×" in res.room:
+            continue
+        resident_map[res.room] = res.name
+
+    fixed = config.get("fixed_charges", {})
+    merged = list(filtered_rows)
+
+    for room, name in resident_map.items():
+        if room in rx_by_room:
+            existing = rx_by_room[room]
+            was_empty = not existing.name
+            # 名前が空なら入居者マスタから反映
+            if was_empty and name:
+                existing.name = name
+            # 固定費が未設定（None or 0）→ 標準固定費をセット
+            # ・名前を新たにセットした場合（新規入居者の空行）
+            # ・既に名前があるが固定費がNone（未セットアップ）
+            needs_charges = (was_empty and existing.name) or (
+                existing.name and existing.rent is None
+            )
+            if needs_charges:
+                existing.rent = fixed.get("rent")
+                existing.management = fixed.get("management")
+                existing.common = fixed.get("common")
+                existing.water = fixed.get("water")
+                existing.utility = fixed.get("utility")
+        else:
+            # 新規入居者: 標準固定費でRxRowを作成
+            new_rx = RxRow(
+                room=room,
+                name=name,
+                rent=fixed.get("rent"),
+                management=fixed.get("management"),
+                common=fixed.get("common"),
+                water=fixed.get("water"),
+                utility=fixed.get("utility"),
+            )
+            merged.append(new_rx)
+
+    # 居室番号でソート（数字は数値順、英数混合は文字列順）
+    def _room_sort_key(rx: RxRow) -> tuple:
+        room = rx.room or ""
+        # ✕付きは末尾に配置
+        if "✕" in room or "×" in room:
+            return (1, room)
+        try:
+            return (0, int(room))
+        except ValueError:
+            return (0, room)
+
+    merged.sort(key=_room_sort_key)
+    return merged
 
 
 def build_all_billings(

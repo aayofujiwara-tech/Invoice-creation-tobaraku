@@ -19,7 +19,7 @@ from readers.nick_reader import read_nick_file
 from readers.master_reader import read_all_facilities_masters
 from calc.meal_calc import calc_all_meals
 from calc.nick_calc import calc_all_nick
-from calc.billing import build_all_billings
+from calc.billing import build_all_billings, merge_residents_into_rx
 from writers.summary_writer import write_summary_to_file
 from writers.invoice_writer import write_all_invoices
 from writers.receipt_writer import write_all_receipts
@@ -157,6 +157,13 @@ def main():
 
     for fname, (residents, rx_rows) in masters_by_facility.items():
         is_new_month = new_month_flags.get(fname, False)
+
+        # 入居者マスタとRX.Xデータのマージ（新規入居者の追加）
+        rx_rows = merge_residents_into_rx(residents, rx_rows, config)
+        if is_new_month:
+            added = len(rx_rows) - len(masters_by_facility[fname][1])
+            if added > 0:
+                print(f"  {fname}: 新規入居者{added}名をRX.Xに追加")
 
         # 食費計算
         meal_records = meals_by_facility.get(fname, [])

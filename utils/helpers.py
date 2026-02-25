@@ -1,0 +1,139 @@
+"""共通ヘルパー関数"""
+
+import math
+import re
+from pathlib import Path
+
+import yaml
+
+
+def load_config(config_path: str = "config.yaml") -> dict:
+    """config.yamlを読み込む"""
+    with open(config_path, "r", encoding="utf-8") as f:
+        return yaml.safe_load(f)
+
+
+def parse_month_arg(month_str: str) -> tuple[int, int]:
+    """'2026-01' 形式の文字列を (year, month) タプルに変換"""
+    parts = month_str.split("-")
+    return int(parts[0]), int(parts[1])
+
+
+def to_reiwa_label(year: int, month: int) -> str:
+    """西暦年月を和暦ラベル(RX.X)に変換。例: (2026, 1) -> 'R8.1'"""
+    reiwa_year = year - 2018
+    return f"R{reiwa_year}.{month}"
+
+
+def parse_reiwa_label(label: str) -> tuple[int, int]:
+    """和暦ラベル(RX.X)を西暦(year, month)に変換。例: 'R8.1' -> (2026, 1)"""
+    m = re.match(r"R(\d+)\.(\d+)", label)
+    if not m:
+        raise ValueError(f"Invalid Reiwa label: {label}")
+    reiwa_year = int(m.group(1))
+    month = int(m.group(2))
+    return 2018 + reiwa_year, month
+
+
+def nick_sheet_name(year: int, month: int) -> str:
+    """ニック請求のシート名を生成。例: (2026, 1) -> '20261'"""
+    return f"{year}{month}"
+
+
+def get_sheet_name_candidates(year: int, month: int) -> list[str]:
+    """対象月のシート名候補を返す（和暦・西暦両対応）。
+
+    Returns:
+        候補リスト。例: ['R8.1', '202601', '20261']
+    """
+    reiwa = to_reiwa_label(year, month)       # R8.1
+    yyyymm = f"{year}{month:02d}"             # 202601
+    yyyym = f"{year}{month}"                  # 20261
+    candidates = [reiwa, yyyymm]
+    if yyyym != yyyymm:
+        candidates.append(yyyym)              # 20261 (ゼロなし)
+    return candidates
+
+
+def find_matching_sheet(sheetnames: list[str], year: int, month: int) -> str | None:
+    """シート名リストから対象月に一致するシートを探す。
+
+    和暦(R8.1)・西暦(202601)・ゼロなし(20261)の順で検索。
+
+    Returns:
+        見つかったシート名。なければNone。
+    """
+    candidates = get_sheet_name_candidates(year, month)
+    for candidate in candidates:
+        if candidate in sheetnames:
+            return candidate
+    return None
+
+
+def parse_sheet_year_month(sheet_name: str) -> tuple[int, int] | None:
+    """シート名から(西暦年, 月)を抽出する。和暦・西暦両対応。
+
+    Returns:
+        (year, month) or None（解析不能の場合）
+    """
+    # 和暦パターン: R8.1, R7.12
+    m = re.match(r"R(\d+)\.(\d+)$", sheet_name)
+    if m:
+        return 2018 + int(m.group(1)), int(m.group(2))
+
+    # 西暦6桁パターン: 202601
+    m = re.match(r"^(20\d{2})(\d{2})$", sheet_name)
+    if m:
+        y, mo = int(m.group(1)), int(m.group(2))
+        if 1 <= mo <= 12:
+            return y, mo
+
+    # 西暦5桁パターン: 20261 (ゼロなし1〜9月)
+    m = re.match(r"^(20\d{2})(\d)$", sheet_name)
+    if m:
+        y, mo = int(m.group(1)), int(m.group(2))
+        if 1 <= mo <= 9:
+            return y, mo
+
+    return None
+
+
+def normalize_room(room_val) -> str:
+    """居室番号を正規化する。
+    - 数値(608.0) -> '608'
+    - 文字列('2A') -> '2A'
+    - None -> ''
+    """
+    if room_val is None:
+        return ""
+    if isinstance(room_val, float):
+        return str(int(room_val))
+    if isinstance(room_val, int):
+        return str(room_val)
+    return str(room_val).strip()
+
+
+def col_letter_to_index(letter: str) -> int:
+    """列文字をインデックス(1始まり)に変換。例: 'A'->1, 'E'->5, 'AI'->35"""
+    result = 0
+    for ch in letter.upper():
+        result = result * 26 + (ord(ch) - ord("A") + 1)
+    return result
+
+
+def calc_nick_billing_price(set_type: str, config: dict) -> int:
+    """ニックのセット種別から請求単価（マークアップ後）を計算する。
+
+    Aセットは908円固定。それ以外は ceil(基本単価 × 1.21)。
+    """
+    overrides = config.get("nick_price_overrides", {})
+    if set_type in overrides:
+        return overrides[set_type]
+
+    base_prices = config.get("nick_base_prices", {})
+    base = base_prices.get(set_type)
+    if base is None:
+        raise ValueError(f"Unknown nick set type: {set_type}")
+
+    rate = config.get("nick_markup_rate", 1.21)
+    return math.ceil(base * rate)

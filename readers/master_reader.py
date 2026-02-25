@@ -115,6 +115,9 @@ class RxRow:
         """分納ありかどうか"""
         return bool(self.installment_balance and self.installment_balance > 0)
 
+    # 福祉上限として妥当な最低額（固定費合計を下回る値は上限として不合理）
+    _MIN_WELFARE_LIMIT = 50000
+
     @property
     def welfare_limit(self) -> int | None:
         """備考欄から福祉上限額を読み取る。数値がなければNone。
@@ -122,19 +125,27 @@ class RxRow:
         備考欄のパターン:
           - "80,000" or "110000" → そのまま数値
           - "9〇" or "11○" → 数字×10,000（○/〇 = 万の略記）
-          - "9〇+初期1万" → 9×10,000 = 90,000（+以降は無視）
+          - "10〇+初期1万" → 10×10,000 + 1×10,000 = 110,000
+            （+初期X万 がある場合、X万を加算）
         """
         if not self.notes:
             return None
         import re
         notes_str = str(self.notes).strip()
+
         # まず「数字+○/〇」パターンを検出（○ = 万の略記）
-        # 例: "9〇", "11○", "9〇+初期1万", "13"
-        # +以降は無視
-        base = notes_str.split("+")[0].strip()
-        circle_match = re.match(r"^(\d+)\s*[○〇]", base)
+        # 例: "9〇", "11○", "10〇+初期1万"
+        circle_match = re.match(r"^(\d+)\s*[○〇]", notes_str)
         if circle_match:
-            return int(circle_match.group(1)) * 10000
+            cap = int(circle_match.group(1)) * 10000
+            # "+初期X万" パターンがあれば加算（例: +初期1万 → +10,000）
+            extra_match = re.search(r"\+初期\s*(\d+)\s*万", notes_str)
+            if extra_match:
+                cap += int(extra_match.group(1)) * 10000
+            # 低すぎる値は福祉上限ではなく回数メモ（例: "3〇"=3回目）
+            if cap < self._MIN_WELFARE_LIMIT:
+                return None
+            return cap
 
         # カンマ入り数値パターン（例: "80,000", "110,000"）
         cleaned = notes_str.replace(",", "").replace("，", "").strip()

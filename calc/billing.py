@@ -163,9 +163,16 @@ def build_billing(
             + result.other
         )
 
-        result.adjustment = needed_subtotal - pre_adjustment_subtotal
-        result.subtotal = needed_subtotal
-        result.total = target_total
+        if pre_adjustment_subtotal > needed_subtotal:
+            # 上限超過: マイナス調整で上限に収める
+            result.adjustment = needed_subtotal - pre_adjustment_subtotal
+            result.subtotal = needed_subtotal
+            result.total = target_total
+        else:
+            # 上限以内: 調整不要
+            result.adjustment = 0
+            result.subtotal = pre_adjustment_subtotal
+            result.total = result.subtotal + result.care_burden + result.nurse_burden
     else:
         # 一般入居者: 調整額なし
         result.adjustment = 0

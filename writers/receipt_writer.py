@@ -82,7 +82,7 @@ def write_receipt(
     ws["B6"].value = "金額"
     ws["B6"].font = normal_font
     ws.merge_cells("C6:D6")
-    ws["C6"].value = billing.total
+    ws["C6"].value = billing.subtotal
     ws["C6"].font = amount_font
     ws["C6"].number_format = "¥#,##0"
     ws["C6"].alignment = Alignment(horizontal="center")

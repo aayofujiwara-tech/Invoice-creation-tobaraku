@@ -169,7 +169,7 @@ def write_invoice(
     ws["A6"].font = header_font
 
     ws.merge_cells("C6:G6")
-    ws["C6"].value = billing.total
+    ws["C6"].value = billing.subtotal
     ws["C6"].font = amount_font
     ws["C6"].number_format = "#,##0"
     ws["C6"].border = bottom_border

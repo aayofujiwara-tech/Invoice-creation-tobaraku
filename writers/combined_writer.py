@@ -223,7 +223,7 @@ def write_all_combined(
         if not billing.care_burden and not billing.nurse_burden:
             continue
 
-        filename = f"合算明細書_{billing.name}_{reiwa_label}.xlsx"
+        filename = f"合算明細書_{billing.room}_{billing.name}_{reiwa_label}.xlsx"
         filepath = output_dir / filename
 
         write_combined(

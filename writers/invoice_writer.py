@@ -356,7 +356,7 @@ def write_all_invoices(
         if billing.is_vacant:
             continue
 
-        filename = f"請求書_{billing.name}_{reiwa_label}.xlsx"
+        filename = f"請求書_{billing.room}_{billing.name}_{reiwa_label}.xlsx"
         filepath = output_dir / filename
 
         write_invoice(

@@ -154,6 +154,12 @@ class RxRow:
         ])
 
 
+def _is_retired_room(room: str) -> bool:
+    """退居済み居室かどうか（✕/×/x付き）"""
+    import re
+    return bool(re.search(r"[✕×]", room) or re.search(r"\dx$", room, re.IGNORECASE))
+
+
 def _safe_int(val) -> int | None:
     """セル値を安全にintに変換。0は0として返す。None/空文字はNone。"""
     if val is None:
@@ -223,6 +229,10 @@ def read_rx_sheet(ws) -> list[RxRow]:
 
         # 居室番号がなく、名前だけの場合もスキップ（合計行など）
         if not room:
+            continue
+
+        # ✕/×/x付き居室は退居済み履歴行 — スキップ
+        if _is_retired_room(room):
             continue
 
         rx_row = RxRow(

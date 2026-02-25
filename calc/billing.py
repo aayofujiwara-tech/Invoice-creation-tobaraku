@@ -11,7 +11,7 @@
 """
 
 from dataclasses import dataclass, field
-from readers.master_reader import ResidentMaster, RxRow
+from readers.master_reader import ResidentMaster, RxRow, _is_retired_room
 
 
 @dataclass
@@ -226,8 +226,8 @@ def merge_residents_into_rx(
     for res in residents:
         if not res.room or not res.name:
             continue
-        # ✕付き居室は退居済み — 新規追加しない
-        if "✕" in res.room or "×" in res.room:
+        # ✕/×/x付き居室は退居済み — 新規追加しない
+        if _is_retired_room(res.room):
             continue
         resident_map[res.room] = res.name
 

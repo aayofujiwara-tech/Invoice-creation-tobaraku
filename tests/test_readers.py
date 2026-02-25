@@ -14,7 +14,7 @@ import pytest
 PROJECT_ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
-from utils.helpers import load_config, calc_nick_billing_price
+from utils.helpers import load_config, calc_nick_billing_price, find_file_flexible
 from utils.name_match import normalize_name, names_match
 from readers.meal_reader import read_meal_file, read_all_facilities_meals
 from readers.nick_reader import read_nick_file
@@ -103,19 +103,19 @@ class TestMealReader:
     @pytest.fixture(scope="class")
     def serene_meals(self):
         fpath = CONFIG["input"]["facilities"]["セレーネ"]
-        filepath = INPUT_BASE / fpath["dir"] / fpath["meal"]
+        filepath = find_file_flexible(INPUT_BASE / fpath["dir"], fpath["meal"])
         return read_meal_file(filepath, 2026, 1)
 
     @pytest.fixture(scope="class")
     def pacific_meals(self):
         fpath = CONFIG["input"]["facilities"]["パシフィック"]
-        filepath = INPUT_BASE / fpath["dir"] / fpath["meal"]
+        filepath = find_file_flexible(INPUT_BASE / fpath["dir"], fpath["meal"])
         return read_meal_file(filepath, 2026, 1)
 
     @pytest.fixture(scope="class")
     def renaissance_meals(self):
         fpath = CONFIG["input"]["facilities"]["ルネッサンス"]
-        filepath = INPUT_BASE / fpath["dir"] / fpath["meal"]
+        filepath = find_file_flexible(INPUT_BASE / fpath["dir"], fpath["meal"])
         return read_meal_file(filepath, 2026, 1)
 
     def test_serene_record_count(self, serene_meals):
@@ -248,14 +248,14 @@ class TestMasterReader:
     @pytest.fixture(scope="class")
     def serene_master(self):
         fpath = CONFIG["input"]["facilities"]["セレーネ"]
-        filepath = INPUT_BASE / fpath["dir"] / fpath["master"]
+        filepath = find_file_flexible(INPUT_BASE / fpath["dir"], fpath["master"])
         fconf = CONFIG["facilities"]["セレーネ"]
         return read_master_file(filepath, fconf, 2026, 1)
 
     @pytest.fixture(scope="class")
     def pacific_master(self):
         fpath = CONFIG["input"]["facilities"]["パシフィック"]
-        filepath = INPUT_BASE / fpath["dir"] / fpath["master"]
+        filepath = find_file_flexible(INPUT_BASE / fpath["dir"], fpath["master"])
         fconf = CONFIG["facilities"]["パシフィック"]
         return read_master_file(filepath, fconf, 2026, 1)
 
@@ -330,10 +330,11 @@ class TestMealCrossValidation:
     @pytest.fixture(scope="class")
     def serene_data(self):
         fpath = CONFIG["input"]["facilities"]["セレーネ"]
-        meals = read_meal_file(INPUT_BASE / fpath["dir"] / fpath["meal"], 2026, 1)
+        facility_dir = INPUT_BASE / fpath["dir"]
+        meals = read_meal_file(find_file_flexible(facility_dir, fpath["meal"]), 2026, 1)
         fconf = CONFIG["facilities"]["セレーネ"]
         _, rx_rows, _ = read_master_file(
-            INPUT_BASE / fpath["dir"] / fpath["master"], fconf, 2026, 1
+            find_file_flexible(facility_dir, fpath["master"]), fconf, 2026, 1
         )
         return meals, rx_rows
 
@@ -373,17 +374,20 @@ class TestNickCrossValidation:
     @pytest.fixture(scope="class")
     def validation_data(self):
         common_dir = INPUT_BASE / CONFIG["input"]["common_dir"]
-        nick_records = read_nick_file(common_dir / CONFIG["input"]["nick_file"], 2026, 1)
+        nick_path = find_file_flexible(common_dir, CONFIG["input"]["nick_file"])
+        nick_records = read_nick_file(nick_path, 2026, 1)
         # 全拠点のマスターを読む
         all_rx = {}
         for fname, fpath_conf in CONFIG["input"]["facilities"].items():
-            filepath = INPUT_BASE / fpath_conf["dir"] / fpath_conf["master"]
+            try:
+                filepath = find_file_flexible(INPUT_BASE / fpath_conf["dir"], fpath_conf["master"])
+            except FileNotFoundError:
+                continue
             fconf = CONFIG["facilities"][fname]
-            if filepath.exists():
-                _, rx_rows, _ = read_master_file(filepath, fconf, 2026, 1)
-                for r in rx_rows:
-                    if r.room and not r.is_vacant:
-                        all_rx[r.room] = r
+            _, rx_rows, _ = read_master_file(filepath, fconf, 2026, 1)
+            for r in rx_rows:
+                if r.room and not r.is_vacant:
+                    all_rx[r.room] = r
         return nick_records, all_rx
 
     def test_nick_diaper_crosscheck(self, validation_data):

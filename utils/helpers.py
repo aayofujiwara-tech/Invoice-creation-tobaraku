@@ -116,6 +116,34 @@ def normalize_room(room_val) -> str:
     return unicodedata.normalize("NFKC", str(room_val)).strip()
 
 
+def _normalize_filename(name: str) -> str:
+    """ファイル名を正規化（比較用）。閉じ括弧と拡張子の間の_やスペースを除去。"""
+    # ')_.xlsx' / ') .xlsx' / ')  .xlsx' 等 → ').xlsx' に統一
+    return re.sub(r"\)[_\s]+\.", ").", name)
+
+
+def find_file_flexible(directory: Path, config_filename: str) -> Path:
+    """ファイル名のバリエーション（_あり/なし/スペース）を許容して検索する。
+
+    検索順:
+      1. config記載のファイル名で完全一致
+      2. ディレクトリ内を走査し、正規化後の名前が一致するファイル
+    """
+    exact = directory / config_filename
+    if exact.exists():
+        return exact
+
+    target_normalized = _normalize_filename(config_filename)
+
+    for f in directory.iterdir():
+        if f.is_file() and _normalize_filename(f.name) == target_normalized:
+            return f
+
+    raise FileNotFoundError(
+        f"ファイルが見つかりません: {config_filename}（または類似名）in {directory}"
+    )
+
+
 def col_letter_to_index(letter: str) -> int:
     """列文字をインデックス(1始まり)に変換。例: 'A'->1, 'E'->5, 'AI'->35"""
     result = 0

@@ -14,7 +14,7 @@ import pytest
 PROJECT_ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
-from utils.helpers import load_config
+from utils.helpers import load_config, find_file_flexible
 from utils.name_match import normalize_name
 from readers.meal_reader import read_meal_file
 from readers.nick_reader import read_nick_file
@@ -35,7 +35,8 @@ class TestMealCalc:
     @pytest.fixture(scope="class")
     def serene_meal_by_room(self):
         fpath = CONFIG["input"]["facilities"]["セレーネ"]
-        records = read_meal_file(INPUT_BASE / fpath["dir"] / fpath["meal"], 2026, 1)
+        meal_path = find_file_flexible(INPUT_BASE / fpath["dir"], fpath["meal"])
+        records = read_meal_file(meal_path, 2026, 1)
         return calc_all_meals(records, CONFIG)
 
     def test_serene_kato_meal(self, serene_meal_by_room):
@@ -58,9 +59,8 @@ class TestMealCalc:
         """セレーネ: 食費計算値と請求マスターR8.1のI列が全員一致"""
         fpath = CONFIG["input"]["facilities"]["セレーネ"]
         fconf = CONFIG["facilities"]["セレーネ"]
-        _, rx_rows, _ = read_master_file(
-            INPUT_BASE / fpath["dir"] / fpath["master"], fconf, 2026, 1
-        )
+        master_path = find_file_flexible(INPUT_BASE / fpath["dir"], fpath["master"])
+        _, rx_rows, _ = read_master_file(master_path, fconf, 2026, 1)
         mismatches = []
         for rx in rx_rows:
             if rx.is_vacant or not rx.room:
@@ -83,12 +83,12 @@ class TestNickCalc:
     def serene_nick_by_room(self):
         """セレーネ拠点のみのニック計算（居室番号衝突を避ける）"""
         common_dir = INPUT_BASE / CONFIG["input"]["common_dir"]
-        nick_records = read_nick_file(common_dir / CONFIG["input"]["nick_file"], 2026, 1)
+        nick_path = find_file_flexible(common_dir, CONFIG["input"]["nick_file"])
+        nick_records = read_nick_file(nick_path, 2026, 1)
         fpath = CONFIG["input"]["facilities"]["セレーネ"]
         fconf = CONFIG["facilities"]["セレーネ"]
-        _, rx_rows, _ = read_master_file(
-            INPUT_BASE / fpath["dir"] / fpath["master"], fconf, 2026, 1
-        )
+        master_path = find_file_flexible(INPUT_BASE / fpath["dir"], fpath["master"])
+        _, rx_rows, _ = read_master_file(master_path, fconf, 2026, 1)
         room_name_map = {rx.room: rx.name for rx in rx_rows if rx.room and rx.name}
         return calc_all_nick(nick_records, room_name_map, CONFIG)
 
@@ -96,15 +96,18 @@ class TestNickCalc:
     def all_nick_by_facility(self):
         """全拠点のニック計算（拠点ごとに別々のroom_name_map）"""
         common_dir = INPUT_BASE / CONFIG["input"]["common_dir"]
-        nick_records = read_nick_file(common_dir / CONFIG["input"]["nick_file"], 2026, 1)
+        nick_path = find_file_flexible(common_dir, CONFIG["input"]["nick_file"])
+        nick_records = read_nick_file(nick_path, 2026, 1)
         result = {}
         for fname, fpath_conf in CONFIG["input"]["facilities"].items():
-            filepath = INPUT_BASE / fpath_conf["dir"] / fpath_conf["master"]
+            try:
+                filepath = find_file_flexible(INPUT_BASE / fpath_conf["dir"], fpath_conf["master"])
+            except FileNotFoundError:
+                continue
             fconf = CONFIG["facilities"][fname]
-            if filepath.exists():
-                _, rx_rows, _ = read_master_file(filepath, fconf, 2026, 1)
-                room_name_map = {rx.room: rx.name for rx in rx_rows if rx.room and rx.name}
-                result[fname] = calc_all_nick(nick_records, room_name_map, CONFIG)
+            _, rx_rows, _ = read_master_file(filepath, fconf, 2026, 1)
+            room_name_map = {rx.room: rx.name for rx in rx_rows if rx.room and rx.name}
+            result[fname] = calc_all_nick(nick_records, room_name_map, CONFIG)
         return result
 
     def test_nick_mapping_count(self, all_nick_by_facility):
@@ -136,17 +139,19 @@ class TestBilling:
     @pytest.fixture(scope="class")
     def serene_billings(self):
         fpath = CONFIG["input"]["facilities"]["セレーネ"]
+        facility_dir = INPUT_BASE / fpath["dir"]
         # 食費
-        meal_records = read_meal_file(INPUT_BASE / fpath["dir"] / fpath["meal"], 2026, 1)
+        meal_path = find_file_flexible(facility_dir, fpath["meal"])
+        meal_records = read_meal_file(meal_path, 2026, 1)
         meal_by_room = calc_all_meals(meal_records, CONFIG)
 
         # ニック
         common_dir = INPUT_BASE / CONFIG["input"]["common_dir"]
-        nick_records = read_nick_file(common_dir / CONFIG["input"]["nick_file"], 2026, 1)
+        nick_path = find_file_flexible(common_dir, CONFIG["input"]["nick_file"])
+        nick_records = read_nick_file(nick_path, 2026, 1)
         fconf = CONFIG["facilities"]["セレーネ"]
-        _, rx_rows, _ = read_master_file(
-            INPUT_BASE / fpath["dir"] / fpath["master"], fconf, 2026, 1
-        )
+        master_path = find_file_flexible(facility_dir, fpath["master"])
+        _, rx_rows, _ = read_master_file(master_path, fconf, 2026, 1)
         room_name_map = {rx.room: rx.name for rx in rx_rows if rx.room and rx.name}
         nick_by_room = calc_all_nick(nick_records, room_name_map, CONFIG)
 

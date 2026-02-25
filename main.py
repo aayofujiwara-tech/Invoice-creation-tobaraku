@@ -13,7 +13,7 @@ import sys
 from datetime import date, datetime
 from pathlib import Path
 
-from utils.helpers import load_config, nick_sheet_name, parse_month_arg, to_reiwa_label
+from utils.helpers import load_config, nick_sheet_name, parse_month_arg, to_reiwa_label, find_file_flexible
 from readers.meal_reader import read_all_facilities_meals
 from readers.nick_reader import read_nick_file
 from readers.master_reader import read_all_facilities_masters
@@ -39,12 +39,12 @@ def resolve_input_paths(config: dict) -> dict:
     for facility_name, fconf in input_conf["facilities"].items():
         facility_dir = base_dir / fconf["dir"]
         paths[facility_name] = {
-            "master": facility_dir / fconf["master"],
-            "meal": facility_dir / fconf["meal"],
+            "master": find_file_flexible(facility_dir, fconf["master"]),
+            "meal": find_file_flexible(facility_dir, fconf["meal"]),
         }
 
     common_dir = base_dir / input_conf["common_dir"]
-    paths["nick"] = common_dir / input_conf["nick_file"]
+    paths["nick"] = find_file_flexible(common_dir, input_conf["nick_file"])
 
     return paths
 

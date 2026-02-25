@@ -25,7 +25,14 @@ from pathlib import Path
 
 import openpyxl
 
-from utils.helpers import col_letter_to_index, normalize_room, to_reiwa_label
+from utils.helpers import (
+    col_letter_to_index,
+    find_matching_sheet,
+    get_sheet_name_candidates,
+    normalize_room,
+    parse_sheet_year_month,
+    to_reiwa_label,
+)
 
 
 # RX.Xシートの列インデックス（1始まり）
@@ -253,20 +260,17 @@ def read_rx_sheet(ws) -> list[RxRow]:
 
 
 def _find_latest_rx_sheet(wb: openpyxl.Workbook, year: int, month: int) -> str | None:
-    """対象月以前の最新RX.Xシートを探す。
+    """対象月以前の最新RX.Xシートを探す（和暦・西暦両対応）。
 
-    対象月のシートが見つからない場合、直前月から過去12ヶ月を遡って探す。
+    対象月のシートが見つからない場合、直前月から過去に遡って探す。
     """
-    from utils.helpers import parse_reiwa_label
-
-    # RX.X形式のシートを収集して年月でソート
+    # 和暦(R8.1)・西暦(202601/20261)両方のフォーマットを認識
     rx_sheets = []
     for name in wb.sheetnames:
-        try:
-            y, m = parse_reiwa_label(name)
+        parsed = parse_sheet_year_month(name)
+        if parsed is not None:
+            y, m = parsed
             rx_sheets.append((y, m, name))
-        except ValueError:
-            continue
 
     if not rx_sheets:
         return None
@@ -310,27 +314,29 @@ def read_master_file(
         )
     residents = read_resident_master(wb[resident_sheet])
 
-    # RX.Xシート
-    rx_label = to_reiwa_label(year, month)
+    # RX.Xシート（和暦R8.1 / 西暦202601 / 20261 の順で検索）
+    rx_label = find_matching_sheet(wb.sheetnames, year, month)
     is_new_month = False
 
-    if rx_label in wb.sheetnames:
+    if rx_label is not None:
         rx_rows = read_rx_sheet(wb[rx_label])
     elif allow_fallback:
         # 直前月のシートを探す
         fallback_label = _find_latest_rx_sheet(wb, year, month)
         if fallback_label is None:
+            candidates = get_sheet_name_candidates(year, month)
             wb.close()
             raise ValueError(
-                f"Sheet '{rx_label}' not found and no previous month sheet available. "
+                f"Sheets {candidates} not found and no previous month sheet available. "
                 f"Available: {wb.sheetnames}"
             )
         rx_rows = read_rx_sheet(wb[fallback_label])
         is_new_month = True
     else:
+        candidates = get_sheet_name_candidates(year, month)
         wb.close()
         raise ValueError(
-            f"Sheet '{rx_label}' not found. Available: {wb.sheetnames}"
+            f"Sheets {candidates} not found. Available: {wb.sheetnames}"
         )
 
     wb.close()

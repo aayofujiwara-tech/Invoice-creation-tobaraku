@@ -40,6 +40,64 @@ def nick_sheet_name(year: int, month: int) -> str:
     return f"{year}{month}"
 
 
+def get_sheet_name_candidates(year: int, month: int) -> list[str]:
+    """対象月のシート名候補を返す（和暦・西暦両対応）。
+
+    Returns:
+        候補リスト。例: ['R8.1', '202601', '20261']
+    """
+    reiwa = to_reiwa_label(year, month)       # R8.1
+    yyyymm = f"{year}{month:02d}"             # 202601
+    yyyym = f"{year}{month}"                  # 20261
+    candidates = [reiwa, yyyymm]
+    if yyyym != yyyymm:
+        candidates.append(yyyym)              # 20261 (ゼロなし)
+    return candidates
+
+
+def find_matching_sheet(sheetnames: list[str], year: int, month: int) -> str | None:
+    """シート名リストから対象月に一致するシートを探す。
+
+    和暦(R8.1)・西暦(202601)・ゼロなし(20261)の順で検索。
+
+    Returns:
+        見つかったシート名。なければNone。
+    """
+    candidates = get_sheet_name_candidates(year, month)
+    for candidate in candidates:
+        if candidate in sheetnames:
+            return candidate
+    return None
+
+
+def parse_sheet_year_month(sheet_name: str) -> tuple[int, int] | None:
+    """シート名から(西暦年, 月)を抽出する。和暦・西暦両対応。
+
+    Returns:
+        (year, month) or None（解析不能の場合）
+    """
+    # 和暦パターン: R8.1, R7.12
+    m = re.match(r"R(\d+)\.(\d+)$", sheet_name)
+    if m:
+        return 2018 + int(m.group(1)), int(m.group(2))
+
+    # 西暦6桁パターン: 202601
+    m = re.match(r"^(20\d{2})(\d{2})$", sheet_name)
+    if m:
+        y, mo = int(m.group(1)), int(m.group(2))
+        if 1 <= mo <= 12:
+            return y, mo
+
+    # 西暦5桁パターン: 20261 (ゼロなし1〜9月)
+    m = re.match(r"^(20\d{2})(\d)$", sheet_name)
+    if m:
+        y, mo = int(m.group(1)), int(m.group(2))
+        if 1 <= mo <= 9:
+            return y, mo
+
+    return None
+
+
 def normalize_room(room_val) -> str:
     """居室番号を正規化する。
     - 数値(608.0) -> '608'

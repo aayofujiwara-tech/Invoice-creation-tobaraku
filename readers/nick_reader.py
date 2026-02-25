@@ -19,7 +19,12 @@ from pathlib import Path
 
 import openpyxl
 
-from utils.helpers import col_letter_to_index, nick_sheet_name
+from utils.helpers import (
+    col_letter_to_index,
+    find_matching_sheet,
+    get_sheet_name_candidates,
+    nick_sheet_name,
+)
 
 
 # ○（全角丸）の文字
@@ -199,13 +204,14 @@ def read_nick_file(
     import calendar
     max_day = calendar.monthrange(year, month)[1]
 
-    sheet_name = nick_sheet_name(year, month)
     wb = openpyxl.load_workbook(str(filepath), data_only=True)
 
-    if sheet_name not in wb.sheetnames:
+    sheet_name = find_matching_sheet(wb.sheetnames, year, month)
+    if sheet_name is None:
+        candidates = get_sheet_name_candidates(year, month)
         wb.close()
         raise ValueError(
-            f"Sheet '{sheet_name}' not found in {filepath}. "
+            f"Sheets {candidates} not found in {filepath}. "
             f"Available: {wb.sheetnames}"
         )
 

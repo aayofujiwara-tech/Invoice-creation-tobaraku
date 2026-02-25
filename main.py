@@ -13,7 +13,7 @@ import sys
 from datetime import date, datetime
 from pathlib import Path
 
-from utils.helpers import load_config, parse_month_arg, to_reiwa_label
+from utils.helpers import load_config, nick_sheet_name, parse_month_arg, to_reiwa_label
 from readers.meal_reader import read_all_facilities_meals
 from readers.nick_reader import read_nick_file
 from readers.master_reader import read_all_facilities_masters
@@ -114,6 +114,14 @@ def main():
             meals_by_facility[fname] = records
             active = [r for r in records if not r.is_empty]
             print(f"  {fname}: {len(records)}スロット, {len(active)}名の食事データ")
+        except ValueError as e:
+            # シートが見つからない場合（データ未準備）→ 警告として0件で続行
+            msg = str(e)
+            if "not found" in msg:
+                print(f"  {fname}: ⚠ {reiwa_label}シートなし → 食費0円で処理（{meal_path.name}）")
+            else:
+                print(f"  {fname}: 食費管理表の読取エラー: {e}")
+            meals_by_facility[fname] = []
         except Exception as e:
             print(f"  {fname}: 食費管理表の読取エラー: {e}")
             meals_by_facility[fname] = []
@@ -124,6 +132,14 @@ def main():
     try:
         nick_records = read_nick_file(nick_file, year, month)
         print(f"  {len(nick_records)}名のニックデータ")
+    except ValueError as e:
+        msg = str(e)
+        if "not found" in msg:
+            nick_sheet = nick_sheet_name(year, month)
+            print(f"  ⚠ {nick_sheet}シートなし → ニック0円で処理（{nick_file.name}）")
+        else:
+            print(f"  ニック請求の読取エラー: {e}")
+        nick_records = []
     except Exception as e:
         print(f"  ニック請求の読取エラー: {e}")
         nick_records = []
@@ -146,7 +162,9 @@ def main():
             status = "（前月データから新規作成）" if is_new_month else ""
             print(f"  {fname}: {len(residents)}入居者マスタ, {len(active)}名のRXデータ{status}")
         except Exception as e:
-            print(f"  {fname}: 請求マスターの読取エラー: {e}")
+            print(f"  {fname}: ✗ 請求マスターの読取エラー: {e}")
+            print(f"    → この拠点はスキップされます")
+            continue
 
     print()
 

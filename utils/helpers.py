@@ -2,6 +2,7 @@
 
 import math
 import re
+import unicodedata
 from pathlib import Path
 
 import yaml
@@ -102,6 +103,7 @@ def normalize_room(room_val) -> str:
     """居室番号を正規化する。
     - 数値(608.0) -> '608'
     - 文字列('2A') -> '2A'
+    - 全角数字('５B') -> '5B' (NFKC正規化)
     - None -> ''
     """
     if room_val is None:
@@ -110,7 +112,8 @@ def normalize_room(room_val) -> str:
         return str(int(room_val))
     if isinstance(room_val, int):
         return str(room_val)
-    return str(room_val).strip()
+    # NFKC正規化で全角英数字を半角に変換
+    return unicodedata.normalize("NFKC", str(room_val)).strip()
 
 
 def col_letter_to_index(letter: str) -> int:

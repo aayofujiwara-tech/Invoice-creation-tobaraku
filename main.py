@@ -97,11 +97,59 @@ def verify_billings_vs_master(
         if rx.subtotal and rx.subtotal > 0 and b.subtotal > 0:
             diff = b.subtotal - rx.subtotal
             if abs(diff) > 1000:
-                warnings.append(
-                    f"【要確認・小計】{facility_name} {rx.room} {rx.name}: "
-                    f"自動計算={b.subtotal:,}円, マスター={rx.subtotal:,}円 (差額{diff:+,}円)\n"
-                    f"  → 大幅な差異があります。マスターのU-V列に非標準データがないか確認してください。"
-                )
+                # 差異の内訳を分析
+                breakdown_lines = []
+
+                # 食費の差異
+                calc_meal = meal_by_room.get(rx.room)
+                master_meal = rx.meal or 0
+                if calc_meal is not None and calc_meal != master_meal:
+                    meal_diff = calc_meal - master_meal
+                    breakdown_lines.append(
+                        f"    食費: 自動計算={calc_meal:,}円, マスター={master_meal:,}円 (差額{meal_diff:+,}円)"
+                    )
+
+                # ニック（オムツ・日用品）の差異
+                nick_data = nick_by_room.get(rx.room)
+                if nick_data:
+                    calc_diaper, calc_supply = nick_data
+                    master_diaper = rx.diaper or 0
+                    master_supply = rx.daily_supplies or 0
+                    if calc_diaper != master_diaper:
+                        d_diff = calc_diaper - master_diaper
+                        if master_diaper == 0:
+                            breakdown_lines.append(
+                                f"    オムツ: ニック請求に{calc_diaper:,}円のデータあり → マスターK列が空欄"
+                            )
+                        else:
+                            breakdown_lines.append(
+                                f"    オムツ: 自動計算={calc_diaper:,}円, マスター={master_diaper:,}円 (差額{d_diff:+,}円)"
+                            )
+                    if calc_supply != master_supply:
+                        s_diff = calc_supply - master_supply
+                        if master_supply == 0:
+                            breakdown_lines.append(
+                                f"    日用品: ニック請求に{calc_supply:,}円のデータあり → マスターL列が空欄"
+                            )
+                        else:
+                            breakdown_lines.append(
+                                f"    日用品: 自動計算={calc_supply:,}円, マスター={master_supply:,}円 (差額{s_diff:+,}円)"
+                            )
+
+                if breakdown_lines:
+                    detail = "\n".join(breakdown_lines)
+                    warnings.append(
+                        f"【要確認・小計】{facility_name} {rx.room} {rx.name}: "
+                        f"自動計算={b.subtotal:,}円, マスター={rx.subtotal:,}円 (差額{diff:+,}円)\n"
+                        f"  → 差異の内訳:\n{detail}\n"
+                        f"  → マスターの該当列を確認し、入力漏れまたは手動補正の有無を確認してください。"
+                    )
+                else:
+                    warnings.append(
+                        f"【要確認・小計】{facility_name} {rx.room} {rx.name}: "
+                        f"自動計算={b.subtotal:,}円, マスター={rx.subtotal:,}円 (差額{diff:+,}円)\n"
+                        f"  → 食費・ニック以外の要因です。マスターのU-V列に非標準データがないか確認してください。"
+                    )
 
     return warnings
 

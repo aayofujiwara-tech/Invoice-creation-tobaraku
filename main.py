@@ -154,6 +154,105 @@ def verify_billings_vs_master(
     return warnings
 
 
+def validate_billing_results(
+    billings: list[BillingResult],
+    meal_by_room: dict[str, int],
+    nick_by_room: dict[str, tuple[int, int]],
+    facility_name: str,
+) -> list[str]:
+    """計算結果の妥当性をチェックする（マスターとの比較不要）。
+
+    新規月・既存月を問わず常に実行される。
+    計算結果自体の整合性や、データソース間のマッチング漏れを検出する。
+
+    チェック項目:
+      1. 食費管理表にデータがあるのにBillingResultの食費が0 → マッチング漏れ
+      2. ニック請求にデータがあるのにBillingResultに反映されていない → 名寄せ漏れ
+      3. 福祉入居者の合計が上限を超えている → 調整計算の不具合
+      4. 入居者の食費が0（食費管理表にもデータなし） → 未入力 or 自炊の確認
+
+    Args:
+        billings: BillingResult のリスト
+        meal_by_room: {居室番号: 食費月額} の辞書
+        nick_by_room: {居室番号: (オムツ合計, 日用品合計)} の辞書
+        facility_name: 拠点名
+
+    Returns:
+        要確認メッセージのリスト
+    """
+    warnings = []
+    billing_by_room = {b.room: b for b in billings if b.room}
+
+    # 1. 食費管理表にデータがあるのにBillingに反映されていない居室
+    for room, meal_amount in meal_by_room.items():
+        if meal_amount <= 0:
+            continue
+        b = billing_by_room.get(room)
+        if b is None:
+            warnings.append(
+                f"【要確認・食費マッチング】{facility_name} {room}: "
+                f"食費管理表に{meal_amount:,}円のデータがありますが、"
+                f"請求マスターに該当居室がありません。入退居情報を確認してください。"
+            )
+        elif b.meal == 0 and meal_amount > 0:
+            warnings.append(
+                f"【要確認・食費マッチング】{facility_name} {room} {b.name}: "
+                f"食費管理表に{meal_amount:,}円のデータがありますが、"
+                f"請求データの食費が0円です。計算ロジックを確認してください。"
+            )
+
+    # 2. ニック計算結果がBillingに反映されていない居室
+    for room, (diaper, supply) in nick_by_room.items():
+        if diaper == 0 and supply == 0:
+            continue
+        b = billing_by_room.get(room)
+        if b is None:
+            nick_total = diaper + supply
+            warnings.append(
+                f"【要確認・ニックマッチング】{facility_name} {room}: "
+                f"ニック請求に{nick_total:,}円のデータがありますが、"
+                f"請求マスターに該当居室がありません。入退居情報を確認してください。"
+            )
+        else:
+            if diaper > 0 and b.diaper == 0:
+                warnings.append(
+                    f"【要確認・ニックマッチング】{facility_name} {room} {b.name}: "
+                    f"ニック請求にオムツ{diaper:,}円のデータがありますが、"
+                    f"請求データに反映されていません。"
+                )
+            if supply > 0 and b.daily_supplies == 0:
+                warnings.append(
+                    f"【要確認・ニックマッチング】{facility_name} {room} {b.name}: "
+                    f"ニック請求に日用品{supply:,}円のデータがありますが、"
+                    f"請求データに反映されていません。"
+                )
+
+    # 3. 福祉入居者: 合計が上限を超えていないか
+    for b in billings:
+        if b.is_vacant or not b.name:
+            continue
+        if b.welfare_limit is not None and b.welfare_limit > 0:
+            if b.total > b.welfare_limit:
+                over = b.total - b.welfare_limit
+                warnings.append(
+                    f"【要確認・福祉上限超過】{facility_name} {b.room} {b.name}: "
+                    f"合計{b.total:,}円が福祉上限{b.welfare_limit:,}円を{over:,}円超過しています。"
+                    f"調整額の計算を確認してください。"
+                )
+
+    # 4. 入居者(固定費あり)なのに食費0 かつ 食費管理表にもデータなし → 自炊 or 未入力
+    for b in billings:
+        if b.is_vacant or not b.name:
+            continue
+        if b.fixed_total > 0 and b.meal == 0 and b.room not in meal_by_room:
+            warnings.append(
+                f"【確認・食費なし】{facility_name} {b.room} {b.name}: "
+                f"食費が0円です（食費管理表にもデータなし）。自炊または未入力の可能性があります。"
+            )
+
+    return warnings
+
+
 def resolve_input_paths(config: dict) -> dict:
     """config.yaml の input セクションからファイルパスを解決する。
 
@@ -341,7 +440,15 @@ def main():
         adjusted = [b for b in active if b.adjustment != 0]
         print(f"  {fname}: 請求集約完了 ({len(active)}名, 合計{total_amount:,}円, 調整{len(adjusted)}名)")
 
+        # 計算結果の妥当性チェック（常に実行）
+        validate_warnings = validate_billing_results(
+            billings, meal_by_room, nick_by_room, fname,
+        )
+        if validate_warnings:
+            all_warnings.extend(validate_warnings)
+
         # マスターとの突合検証（既存月のみ）
+        verify_warnings = []
         if not is_new_month:
             original_rx = masters_by_facility[fname][1]
             verify_warnings = verify_billings_vs_master(
@@ -349,7 +456,10 @@ def main():
             )
             if verify_warnings:
                 all_warnings.extend(verify_warnings)
-                print(f"  {fname}: ⚠ {len(verify_warnings)}件の要確認項目あり")
+
+        new_count = len(validate_warnings) + len(verify_warnings)
+        if new_count > 0:
+            print(f"  {fname}: ⚠ {new_count}件の要確認項目あり")
 
     # 要確認ログ出力
     if all_warnings:

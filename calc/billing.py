@@ -53,7 +53,15 @@ class BillingResult:
 
     @property
     def is_vacant(self) -> bool:
-        return not self.name
+        """空室または請求対象外かどうか。
+
+        名前がない、またはすべての請求額が0の場合を空室扱いとする。
+        RxRow.is_vacantと判定基準を統一し、名前があるが請求額0の入居者
+        （例: 西川太・total=0）に対して誤って請求書を生成しない。
+        """
+        if not self.name:
+            return True
+        return self.total == 0 and self.subtotal == 0
 
     @property
     def fixed_total(self) -> int:
@@ -248,11 +256,19 @@ def merge_residents_into_rx(
             # 名前が空なら入居者マスタから反映
             if was_empty and name:
                 existing.name = name
-            # 固定費が未設定（None or 0）→ 標準固定費をセット
-            # ・名前を新たにセットした場合（新規入居者の空行）
-            # ・既に名前があるが固定費がNone（未セットアップ）
-            needs_charges = (was_empty and existing.name) or (
-                existing.name and existing.rent is None
+            # 固定費が未設定 → 標準固定費をセット
+            # ただし、既に他の請求データ（薬局、デイ等）が存在する場合は
+            # 意図的に固定費なしの入居者（退居後の残請求等）と判断し、
+            # 固定費を追加しない。
+            has_existing_charges = any(v is not None and v != 0 for v in [
+                existing.meal, existing.diaper, existing.daily_supplies,
+                existing.pharmacy, existing.doctor, existing.day_service,
+                existing.office_fee, existing.welfare_equip,
+                existing.support, existing.other,
+            ])
+            needs_charges = (
+                (was_empty and existing.name and not has_existing_charges)
+                or (existing.name and existing.rent is None and not has_existing_charges)
             )
             if needs_charges:
                 existing.rent = fixed.get("rent")

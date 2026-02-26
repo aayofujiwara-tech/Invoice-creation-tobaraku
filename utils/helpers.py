@@ -155,7 +155,20 @@ def col_letter_to_index(letter: str) -> int:
 def calc_nick_billing_price(set_type: str, config: dict) -> int:
     """ニックのセット種別から請求単価（マークアップ後）を計算する。
 
-    Aセットは908円固定。それ以外は ceil(基本単価 × 1.21)。
+    マスターデータとの突合により、端数処理は四捨五入（round）が正しいと判明。
+    例: 用セット base=120, 120×1.21=145.2 → round=145（マスター一致）
+        福セット base=60,  60×1.21=72.6  → round=73（マスター一致）
+    Aセットはnick_price_overridesで908円固定（マークアップ率が異なるため個別指定）。
+
+    Args:
+        set_type: セット種別（全角文字: Ａ,Ｂ,Ｃ,Ｄ,Ｅ,Ｆ,福,ふ,用 等）
+        config: config.yaml の内容
+
+    Returns:
+        請求単価（円/日、税込）
+
+    Raises:
+        ValueError: 未知のセット種別の場合
     """
     overrides = config.get("nick_price_overrides", {})
     if set_type in overrides:
@@ -164,7 +177,13 @@ def calc_nick_billing_price(set_type: str, config: dict) -> int:
     base_prices = config.get("nick_base_prices", {})
     base = base_prices.get(set_type)
     if base is None:
-        raise ValueError(f"Unknown nick set type: {set_type}")
+        raise ValueError(
+            f"未知のニックセット種別: '{set_type}'\n"
+            f"  確認事項: config.yaml の nick_base_prices に '{set_type}' の単価を追加してください。\n"
+            f"  登録済みセット: {list(base_prices.keys())}"
+        )
 
     rate = config.get("nick_markup_rate", 1.21)
-    return math.ceil(base * rate)
+    # 四捨五入（日本式: 0.5は切り上げ）— Python標準のround()は銀行丸め(偶数丸め)のため
+    # math.floorで明示的に実装
+    return math.floor(base * rate + 0.5)

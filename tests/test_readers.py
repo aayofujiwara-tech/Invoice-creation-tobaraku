@@ -58,11 +58,9 @@ class TestHelpers:
         assert calc_nick_billing_price("ふ", CONFIG) == 73
 
     def test_calc_nick_billing_price_you_set(self):
-        """用セット: ceil(120 * 1.21) = 146"""
-        # 解析レポートでは145だが、ceil(120*1.21)=ceil(145.2)=146
-        # 実際のマスターデータ(145)との差は丸め方の違い
+        """用セット: round(120 * 1.21) = 145（マスターデータと一致）"""
         price = calc_nick_billing_price("用", CONFIG)
-        assert price in (145, 146)  # 丸め誤差を許容
+        assert price == 145
 
 
 # ============================================================

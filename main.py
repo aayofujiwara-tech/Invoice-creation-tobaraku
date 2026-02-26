@@ -8,6 +8,7 @@ Usage:
 """
 
 import argparse
+import logging
 import shutil
 import sys
 from datetime import date, datetime
@@ -16,14 +17,93 @@ from pathlib import Path
 from utils.helpers import load_config, nick_sheet_name, parse_month_arg, to_reiwa_label, find_file_flexible
 from readers.meal_reader import read_all_facilities_meals
 from readers.nick_reader import read_nick_file
-from readers.master_reader import read_all_facilities_masters
+from readers.master_reader import read_all_facilities_masters, RxRow
 from calc.meal_calc import calc_all_meals
 from calc.nick_calc import calc_all_nick
-from calc.billing import build_all_billings, merge_residents_into_rx
+from calc.billing import build_all_billings, BillingResult, merge_residents_into_rx
 from writers.summary_writer import write_summary_to_file
 from writers.invoice_writer import write_all_invoices
 from writers.receipt_writer import write_all_receipts
 from writers.combined_writer import write_all_combined
+
+logger = logging.getLogger(__name__)
+
+
+def verify_billings_vs_master(
+    billings: list[BillingResult],
+    rx_rows: list[RxRow],
+    meal_by_room: dict[str, int],
+    nick_by_room: dict[str, tuple[int, int]],
+    facility_name: str,
+) -> list[str]:
+    """計算結果をマスターデータと突合し、差異を要確認ログとして出力する。
+
+    自動計算では再現できない手入力補正（食費の手動加算、ニック日数の日割り等）を
+    検出し、事務担当者が確認すべき項目として警告する。
+
+    プログラムは停止せず、差異のある項目は「要確認」として出力ディレクトリの
+    ログファイルに記録する。
+
+    Args:
+        billings: BillingResult のリスト
+        rx_rows: マスターの RX.X 行データ（比較用のグラウンドトゥルース）
+        meal_by_room: 食費計算結果マップ
+        nick_by_room: ニック計算結果マップ
+        facility_name: 拠点名
+
+    Returns:
+        要確認メッセージのリスト
+    """
+    warnings = []
+    master_by_room = {rx.room: rx for rx in rx_rows if rx.room}
+    billing_by_room = {b.room: b for b in billings}
+
+    for rx in rx_rows:
+        if not rx.room or not rx.name:
+            continue
+
+        b = billing_by_room.get(rx.room)
+        if not b:
+            continue
+
+        # 食費: 計算値 vs マスター
+        calc_meal = meal_by_room.get(rx.room)
+        if calc_meal is not None and rx.meal is not None and calc_meal != rx.meal:
+            diff = calc_meal - rx.meal
+            warnings.append(
+                f"【要確認・食費】{facility_name} {rx.room} {rx.name}: "
+                f"自動計算={calc_meal:,}円, マスター={rx.meal:,}円 (差額{diff:+,}円)\n"
+                f"  → 食費管理表の食数とマスター値が異なります。手動補正の有無を確認してください。"
+            )
+
+        # ニック: 計算値 vs マスター
+        nick_data = nick_by_room.get(rx.room)
+        if nick_data:
+            calc_diaper, calc_supply = nick_data
+            if rx.diaper and calc_diaper != rx.diaper:
+                warnings.append(
+                    f"【要確認・オムツ】{facility_name} {rx.room} {rx.name}: "
+                    f"自動計算={calc_diaper:,}円, マスター={rx.diaper:,}円\n"
+                    f"  → ニック請求の日数とマスター値が異なります。月途中の入退居による日割り調整の可能性があります。"
+                )
+            if rx.daily_supplies and calc_supply != rx.daily_supplies:
+                warnings.append(
+                    f"【要確認・日用品】{facility_name} {rx.room} {rx.name}: "
+                    f"自動計算={calc_supply:,}円, マスター={rx.daily_supplies:,}円\n"
+                    f"  → ニック請求の日数とマスター値が異なります。"
+                )
+
+        # 小計: 大幅な差異（U/V列の非標準データ等）
+        if rx.subtotal and rx.subtotal > 0 and b.subtotal > 0:
+            diff = b.subtotal - rx.subtotal
+            if abs(diff) > 1000:
+                warnings.append(
+                    f"【要確認・小計】{facility_name} {rx.room} {rx.name}: "
+                    f"自動計算={b.subtotal:,}円, マスター={rx.subtotal:,}円 (差額{diff:+,}円)\n"
+                    f"  → 大幅な差異があります。マスターのU-V列に非標準データがないか確認してください。"
+                )
+
+    return warnings
 
 
 def resolve_input_paths(config: dict) -> dict:
@@ -71,6 +151,12 @@ def main():
     )
 
     args = parser.parse_args()
+
+    # ロギング設定
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(message)s",
+    )
 
     # --- パラメータ解析 ---
     year, month = parse_month_arg(args.month)
@@ -172,6 +258,7 @@ def main():
     print("--- Phase 2: 計算 ---")
 
     all_billings: dict[str, list] = {}
+    all_warnings: list[str] = []
 
     for fname, (residents, rx_rows) in masters_by_facility.items():
         is_new_month = new_month_flags.get(fname, False)
@@ -205,6 +292,23 @@ def main():
         total_amount = sum(b.total for b in active)
         adjusted = [b for b in active if b.adjustment != 0]
         print(f"  {fname}: 請求集約完了 ({len(active)}名, 合計{total_amount:,}円, 調整{len(adjusted)}名)")
+
+        # マスターとの突合検証（既存月のみ）
+        if not is_new_month:
+            original_rx = masters_by_facility[fname][1]
+            verify_warnings = verify_billings_vs_master(
+                billings, original_rx, meal_by_room, nick_by_room, fname,
+            )
+            if verify_warnings:
+                all_warnings.extend(verify_warnings)
+                print(f"  {fname}: ⚠ {len(verify_warnings)}件の要確認項目あり")
+
+    # 要確認ログ出力
+    if all_warnings:
+        print()
+        print("--- 要確認項目 ---")
+        for w in all_warnings:
+            print(f"  {w}")
 
     print()
 
@@ -245,6 +349,19 @@ def main():
                 billings, display_name, year, month, issue_date, facility_output
             )
             print(f"  {fname}: 合算明細書{len(combined_files)}件生成")
+
+    # 要確認ログをファイルに出力
+    if all_warnings:
+        log_file = output_base / "要確認ログ.txt"
+        log_file.parent.mkdir(parents=True, exist_ok=True)
+        with open(log_file, "w", encoding="utf-8") as f:
+            f.write(f"ええすまい請求自動化 — 要確認ログ\n")
+            f.write(f"対象月: {reiwa_label} ({year}年{month}月)\n")
+            f.write(f"生成日時: {datetime.now().strftime('%Y-%m-%d %H:%M')}\n")
+            f.write(f"{'=' * 60}\n\n")
+            for w in all_warnings:
+                f.write(f"{w}\n\n")
+        print(f"  要確認ログ: {log_file} ({len(all_warnings)}件)")
 
     print()
     print(f"=== 完了: {output_base} ===")
